@@ -1,0 +1,49 @@
+Literature_Category,Literature_Finding,UKBB_Dataset,UKBB_Field_Name,Sample_Size,Implementation_Status,Priority,Notes
+Clinical_Biomarkers,C-Reactive Protein (CRP),ukb_blood.csv,C_reactive_protein,~500000,Directly_Available,High,Primary inflammatory marker
+Clinical_Biomarkers,Inflammatory markers panel,ukb_blood.csv,"White_blood_cell_leukocyte_count, Neutrophill_count, Lymphocyte_count",604514,Directly_Available,High,Calculate neutrophil-to-lymphocyte ratio
+Clinical_Biomarkers,Cholesterol and lipids,ukb_blood.csv,Cholesterol,604514,Directly_Available,Medium,Basic lipid panel
+Clinical_Biomarkers,Glucose metabolism,ukb_blood.csv,Glucose,604514,Directly_Available,Medium,Metabolic marker
+Clinical_Biomarkers,Advanced lipoprotein profiling,ukb_NMR.csv,409 NMR metabolomic variables,~600000,Directly_Available,Very_High,Superior to traditional lipid panels
+Clinical_Biomarkers,Metabolic panels comprehensive,ukb_NMR.csv,"LDL subfractions, HDL subfractions, VLDL subfractions",~600000,Directly_Available,Very_High,Detailed lipoprotein particle analysis
+Epigenetic_Data,Methylation arrays,Not_Available,None,0,Not_Available,Low,Use PRS as proxy for methylation-related traits
+Epigenetic_Data,iTARGET framework,ukb_PRS.csv,Polygenic risk scores,502182,Proxy_Available,Medium,Use genetic variants associated with epigenetic traits
+Physiological_Measures,Cardiovascular function,ukb_main.csv,"SBP_m, DBP_m, Pulse_m",606361,Directly_Available,High,Blood pressure and pulse measures
+Physiological_Measures,Pulmonary function,ukb_body.csv,"Spirometry measures (FEV1, FVC)",603556,Directly_Available,High,Lung function as aging biomarker
+Physiological_Measures,Cognitive assessments,ukb_brain.csv,Cognitive test results,509304,Directly_Available,Medium,Brain imaging visit cognitive data
+Clinical_Aging_Scores,Frailty index,ukb_frailty.csv,"Walking frequency, grip strength, activity levels",2109463,Directly_Available,High,Comprehensive physical activity measures
+Clinical_Aging_Scores,Physical activity patterns,ukb_frailty.csv,"IPAQ activity measures, MET minutes",606361,Directly_Available,High,Detailed activity quantification
+Retinal_Imaging,Fundus photography,UKBB_retinal_img/,PNG image files,180027,Directly_Available,Very_High,Both eyes bilateral imaging
+Retinal_Imaging,Retinal vessel features,UKBB_retinal_img/,Extract from fundus images,~90000,Requires_Processing,Very_High,Need deep learning for vessel extraction
+Retinal_Imaging,OCT measurements,ukb_OCT.csv,Macular thickness measurements,84864,Directly_Available,High,9 subfield measurements per eye
+Retinal_Imaging,Vessel tortuosity,UKBB_retinal_img/,Extract using AI,~90000,Requires_Processing,High,Literature shows strong aging associations
+Retinal_Imaging,Vessel caliber,UKBB_retinal_img/,Extract using AI,~90000,Requires_Processing,High,Arteriovenous ratio calculations
+Retinal_Imaging,Vessel branching patterns,UKBB_retinal_img/,Extract using AI,~90000,Requires_Processing,Medium,Fractal dimension analysis
+Brain_MRI,Structural brain volumes,ukb_brain.csv,"Volume_of_grey_matter, Volume_of_white_matter",509304,Directly_Available,Very_High,Core brain age predictors
+Brain_MRI,Brain age estimation,ukb_brain.csv,Multiple structural measures,509304,Requires_Modeling,Very_High,Implement covariance neural networks
+Brain_MRI,T1 structural images,ukb_brain.csv,T1_structural_brain_images___NIFTI,509304,Directly_Available,High,Raw NIFTI files for deep learning
+Brain_MRI,Ventricular volume,ukb_brain.csv,Volume_of_ventricular_cerebrospinal_fluid,509304,Directly_Available,High,Brain atrophy marker
+Brain_MRI,Cortical thickness,ukb_brain.csv,Volume_of_peripheral_cortical_grey_matter,509304,Directly_Available,High,Cortical aging marker
+AI_ML_Frameworks,Multi-modal integration,All_datasets,f.eid linkage,606361,Implementation_Required,Very_High,Link using participant ID
+AI_ML_Frameworks,Deep learning imaging,UKBB_retinal_img/ + ukb_brain.csv,Image processing pipelines,~500000,Implementation_Required,High,Process PNG and NIFTI files
+AI_ML_Frameworks,Uncertainty quantification,All_datasets,Temporal validation using instances,Variable,Implementation_Required,Medium,Use longitudinal data for validation
+AI_ML_Frameworks,Interpretable models,All_datasets,Feature importance analysis,Variable,Implementation_Required,High,SHAP values and feature attribution
+Longitudinal_Modeling,Aging trajectories,All_datasets,Instance 0-3 temporal data,Variable,Partially_Available,High,13+ years follow-up available
+Longitudinal_Modeling,Individual trajectory modeling,All_datasets,Repeated measures analysis,Variable,Implementation_Required,Medium,Mixed effects models
+Novel_Approaches,coVariance Neural Networks,ukb_brain.csv,Brain structural volumes,509304,Implementation_Required,High,Literature shows superior performance
+Novel_Approaches,External eye photo analysis,UKBB_retinal_img/,Fundus image analysis,180027,Implementation_Required,Very_High,Predict systemic biomarkers from retina
+Novel_Approaches,Multi-system aging scores,All_datasets,Integration across modalities,Variable,Implementation_Required,Very_High,Combine blood + brain + retinal data
+Body_Composition,DXA bone density,ukb20240116_DXA_long_named.csv,Bone mineral density measures,54097,Directly_Available,Medium,Skeletal aging biomarker
+Body_Composition,Regional body composition,ukb20240116_DXA_long_named.csv,"Regional fat mass, lean mass",54097,Directly_Available,Medium,Sarcopenia and body composition aging
+Body_Composition,Hip shape analysis,ukb20240116_DXA_long_named.csv,Statistical shape modeling scores,54097,Directly_Available,Low,Advanced morphometric analysis
+Medication_Data,Polypharmacy analysis,ukb_medication.csv,Multiple medication records,2009264,Directly_Available,Medium,Drug burden as aging indicator
+Medication_Data,Drug-age interactions,ukb_medication.csv,Medication patterns over time,2009264,Implementation_Required,Medium,Longitudinal medication changes
+Genetic_Data,Population stratification control,ukb_genetic_PC.csv,Genetic principal components 1-40,502316,Directly_Available,High,Essential for genetic analyses
+Genetic_Data,Polygenic risk scores,ukb_PRS.csv,94 disease/trait PRS,502182,Directly_Available,High,Enhanced and standard versions available
+Validation_Outcomes,All-cause mortality,ukb_main.csv,"Death_age, Death_date, all_cause_mortality",606361,Directly_Available,Very_High,Primary validation outcome
+Validation_Outcomes,Disease onset dates,ukb_main.csv,Multiple AO_*_date fields,606361,Directly_Available,High,Cardiovascular and neurological outcomes
+Validation_Outcomes,Hospital records,ukb_main.csv,ICD10 diagnosis codes,606361,Directly_Available,Medium,Disease diagnosis validation
+Temporal_Data,Assessment visit dates,ukb_main.csv,Attend_date,606361,Directly_Available,High,Primary temporal linking field
+Temporal_Data,Baseline measurements,All_datasets,Instance 0 data (2006-2010),Variable,Directly_Available,High,Initial assessment visit
+Temporal_Data,Repeat assessments,All_datasets,Instance 1 data (2012-2013),Variable,Directly_Available,Medium,First follow-up visit
+Temporal_Data,Imaging visits,All_datasets,Instance 2 data (2014+),Variable,Directly_Available,High,Brain and retinal imaging timepoint
+Temporal_Data,Follow-up imaging,All_datasets,Instance 3 data (2019+),Variable,Directly_Available,Medium,Repeat imaging for longitudinal analysis

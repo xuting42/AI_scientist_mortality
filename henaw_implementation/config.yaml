@@ -60,6 +60,8 @@ training:
   epochs: 100
   learning_rate: 0.001
   weight_decay: 0.0001
+  gradient_clip_norm: 1.0  # Add gradient clipping for stability
+  max_history_size: 1000  # Limit training history to prevent memory leaks
   
   # Multi-task loss weights
   loss_weights:

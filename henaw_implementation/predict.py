@@ -19,7 +19,6 @@ import warnings
 
 from henaw_model import HENAWModel, HENAWOutput
 from data_loader import FeatureEngineer
-from evaluate import ClinicalReportGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -62,8 +61,12 @@ class HENAWPredictor:
         with open(config_path, 'r') as f:
             self.config = yaml.safe_load(f)
         
-        # Set device
-        self.device = torch.device(device if torch.cuda.is_available() else 'cpu')
+        # Set device with proper fallback
+        if device == 'cuda' and not torch.cuda.is_available():
+            logger.warning("CUDA requested but not available. Falling back to CPU.")
+            self.device = torch.device('cpu')
+        else:
+            self.device = torch.device(device if torch.cuda.is_available() else 'cpu')
         logger.info(f"Using device: {self.device}")
         
         # Load model
@@ -77,8 +80,13 @@ class HENAWPredictor:
         self.feature_engineer = FeatureEngineer(self.config)
         self._load_normalizers(model_path)
         
-        # Initialize report generator
-        self.report_generator = ClinicalReportGenerator(self.config)
+        # Initialize report generator (if available)
+        try:
+            from evaluate import ClinicalReportGenerator
+            self.report_generator = ClinicalReportGenerator(self.config)
+        except (ImportError, AttributeError) as e:
+            logger.warning(f"ClinicalReportGenerator not available: {e}. Reports will be disabled.")
+            self.report_generator = None
         
         # Warm up model
         self._warmup()
@@ -115,6 +123,23 @@ class HENAWPredictor:
             if not isinstance(checkpoint, dict):
                 raise ValueError("Checkpoint must be a dictionary")
             
+            # Validate architecture compatibility
+            if 'config' in checkpoint:
+                saved_config = checkpoint['config']
+                if 'model' in saved_config:
+                    # Check key model parameters match
+                    saved_model_config = saved_config['model']
+                    current_model_config = self.config['model']
+                    
+                    critical_params = ['input_dim', 'hidden_dims', 'system_embedding_dim']
+                    for param in critical_params:
+                        if param in saved_model_config and param in current_model_config:
+                            if saved_model_config[param] != current_model_config[param]:
+                                logger.warning(f"Model architecture mismatch: {param} - "
+                                             f"saved: {saved_model_config[param]}, "
+                                             f"current: {current_model_config[param]}")
+                                raise ValueError(f"Incompatible model architecture: {param} mismatch")
+            
             # Load state dict with proper handling
             if 'model_state_dict' in checkpoint:
                 state_dict = checkpoint['model_state_dict']
@@ -133,17 +158,34 @@ class HENAWPredictor:
             
             # Load with error handling for mismatched architectures
             try:
+                # First check parameter counts match approximately
+                checkpoint_param_count = sum(p.numel() for p in state_dict.values() if isinstance(p, torch.Tensor))
+                model_param_count_before = sum(p.numel() for p in model.parameters())
+                
+                # Allow some tolerance for minor architecture changes
+                if abs(checkpoint_param_count - model_param_count_before) / model_param_count_before > 0.1:
+                    logger.warning(f"Significant parameter count mismatch: "
+                                 f"checkpoint has {checkpoint_param_count}, "
+                                 f"model expects {model_param_count_before}")
+                
                 incompatible_keys = model.load_state_dict(state_dict, strict=False)
                 
                 if incompatible_keys.missing_keys:
-                    logger.warning(f"Missing keys in checkpoint: {incompatible_keys.missing_keys}")
+                    # Check if missing keys are critical
+                    critical_missing = [k for k in incompatible_keys.missing_keys 
+                                      if not any(skip in k for skip in ['num_batches_tracked', 'running_'])]
+                    if critical_missing:
+                        logger.warning(f"Critical missing keys in checkpoint: {critical_missing}")
+                        if len(critical_missing) > 10:  # Too many missing keys
+                            raise ValueError("Too many missing keys - likely incompatible architecture")
+                
                 if incompatible_keys.unexpected_keys:
-                    logger.warning(f"Unexpected keys in checkpoint: {incompatible_keys.unexpected_keys}")
+                    logger.warning(f"Unexpected keys in checkpoint: {incompatible_keys.unexpected_keys[:10]}")
                     
                 # Check if critical components loaded successfully
-                model_param_count = sum(p.numel() for p in model.parameters())
-                if model_param_count == 0:
-                    raise RuntimeError("Model has no parameters after loading checkpoint")
+                model_param_count_after = sum(p.numel() for p in model.parameters() if p.requires_grad)
+                if model_param_count_after == 0:
+                    raise RuntimeError("Model has no trainable parameters after loading checkpoint")
                     
             except Exception as e:
                 raise RuntimeError(f"Failed to load model state dict: {e}") from e
@@ -265,14 +307,16 @@ class HENAWPredictor:
         try:
             # Create dummy input
             dummy_input = torch.randn(1, 9).to(self.device)
-        dummy_age = torch.tensor([[55.0]]).to(self.device)
-        
-        # Run a few forward passes
-        with torch.no_grad():
-            for _ in range(5):
-                _ = self.model(dummy_input, dummy_age)
-        
-        logger.info("Model warmed up")
+            dummy_age = torch.tensor([[55.0]]).to(self.device)
+            
+            # Run a few forward passes
+            with torch.no_grad():
+                for _ in range(5):
+                    _ = self.model(dummy_input, dummy_age)
+            
+            logger.info("Model warmed up")
+        except Exception as e:
+            logger.warning(f"Warmup failed: {e}. Continuing without warmup.")
     
     def predict_single(self,
                       biomarkers: Union[np.ndarray, Dict[str, float]],
@@ -357,17 +401,23 @@ class HENAWPredictor:
             inference_time_ms=inference_time_ms
         )
         
-        # Generate clinical report if requested
-        if return_report:
-            report = self.report_generator.generate_individual_report(
-                biomarkers=biomarker_array,
-                biological_age=biological_age,
-                chronological_age=chronological_age,
-                mortality_risk=mortality_risk,
-                morbidity_risks=morbidity_risks,
-                feature_importance=feature_importance
-            )
-            result.clinical_report = report
+        # Generate clinical report if requested and available
+        if return_report and self.report_generator is not None:
+            try:
+                report = self.report_generator.generate_individual_report(
+                    biomarkers=biomarker_array,
+                    biological_age=biological_age,
+                    chronological_age=chronological_age,
+                    mortality_risk=mortality_risk,
+                    morbidity_risks=morbidity_risks,
+                    feature_importance=feature_importance
+                )
+                result.clinical_report = report
+            except Exception as e:
+                logger.warning(f"Failed to generate clinical report: {e}")
+                result.clinical_report = None
+        elif return_report:
+            logger.warning("Clinical report requested but generator not available")
         
         # Check latency requirement
         if inference_time_ms > 100:
@@ -600,19 +650,64 @@ class RealTimePredictor:
             port: Port number
         """
         from flask import Flask, request, jsonify
+        from flask_limiter import Limiter
+        from flask_limiter.util import get_remote_address
+        import re
         
         app = Flask(__name__)
         
+        # Add rate limiting
+        limiter = Limiter(
+            app=app,
+            key_func=get_remote_address,
+            default_limits=["1000 per hour", "100 per minute"]
+        )
+        
         @app.route('/predict', methods=['POST'])
+        @limiter.limit("10 per minute")  # Rate limit for prediction endpoint
         def predict():
             try:
+                # Validate request has JSON data
+                if not request.is_json:
+                    return jsonify({'error': 'Content-Type must be application/json'}), 400
+                
                 data = request.json
                 
-                # Extract inputs
-                biomarkers = data['biomarkers']
-                chronological_age = data['chronological_age']
-                sex = data['sex']
-                participant_id = data.get('participant_id', 'unknown')
+                # Validate required fields
+                required_fields = ['biomarkers', 'chronological_age', 'sex']
+                missing_fields = [field for field in required_fields if field not in data]
+                if missing_fields:
+                    return jsonify({'error': f'Missing required fields: {missing_fields}'}), 400
+                
+                # Validate and sanitize inputs
+                try:
+                    biomarkers = data['biomarkers']
+                    if not isinstance(biomarkers, list):
+                        return jsonify({'error': 'biomarkers must be a list'}), 400
+                    if len(biomarkers) != 9:  # Expected number of biomarkers
+                        return jsonify({'error': f'Expected 9 biomarkers, got {len(biomarkers)}'}), 400
+                    
+                    # Validate each biomarker is numeric
+                    for i, val in enumerate(biomarkers):
+                        if not isinstance(val, (int, float)):
+                            return jsonify({'error': f'Biomarker at index {i} is not numeric'}), 400
+                        if not -1000 <= val <= 10000:  # Reasonable bounds
+                            return jsonify({'error': f'Biomarker at index {i} is out of reasonable range'}), 400
+                    
+                    chronological_age = float(data['chronological_age'])
+                    if not 18 <= chronological_age <= 120:
+                        return jsonify({'error': f'Age must be between 18 and 120, got {chronological_age}'}), 400
+                    
+                    sex = int(data['sex'])
+                    if sex not in [0, 1]:
+                        return jsonify({'error': f'Sex must be 0 (female) or 1 (male), got {sex}'}), 400
+                    
+                    # Sanitize participant ID (alphanumeric only)
+                    participant_id = str(data.get('participant_id', 'unknown'))
+                    participant_id = re.sub(r'[^a-zA-Z0-9_-]', '', participant_id)[:50]  # Limit length
+                    
+                except (ValueError, TypeError) as e:
+                    return jsonify({'error': f'Invalid data type: {str(e)}'}), 400
                 
                 # Predict
                 result = self.predict_with_cache(
@@ -634,14 +729,46 @@ class RealTimePredictor:
                 
                 return jsonify(response)
             
+            except KeyError as e:
+                logger.error(f"Missing key in request: {e}")
+                return jsonify({'error': f'Missing required field: {str(e)}'}), 400
+            except ValueError as e:
+                logger.error(f"Value error in prediction: {e}")
+                return jsonify({'error': f'Invalid value: {str(e)}'}), 400
             except Exception as e:
-                return jsonify({'error': str(e)}), 400
+                logger.error(f"Unexpected error in prediction: {e}", exc_info=True)
+                # Don't expose internal errors to client
+                return jsonify({'error': 'Internal server error'}), 500
         
         @app.route('/health', methods=['GET'])
+        @limiter.exempt  # Health check doesn't need rate limiting
         def health():
-            return jsonify({'status': 'healthy'})
+            # Perform actual health checks
+            health_status = {
+                'status': 'healthy',
+                'model_loaded': self.model is not None,
+                'device': str(self.device),
+                'cache_size': len(self.prediction_cache)
+            }
+            
+            # Check if model is responsive
+            try:
+                test_input = torch.randn(1, 9).to(self.device)
+                with torch.no_grad():
+                    _ = self.model(test_input)
+                health_status['model_responsive'] = True
+            except Exception as e:
+                health_status['model_responsive'] = False
+                health_status['status'] = 'degraded'
+                logger.warning(f"Model health check failed: {e}")
+            
+            status_code = 200 if health_status['status'] == 'healthy' else 503
+            return jsonify(health_status), status_code
         
         logger.info(f"Starting prediction server on {host}:{port}")
+        
+        # Import os module for environment checking
+        import os
         
         # Use production-ready server based on environment
         environment = os.environ.get('FLASK_ENV', 'development')

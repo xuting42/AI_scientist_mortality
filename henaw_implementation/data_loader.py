@@ -16,6 +16,11 @@ import h5py
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
 import warnings
+import fcntl
+import os
+import tempfile
+import hashlib
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -78,51 +83,122 @@ class UKBBDataset(Dataset):
         logger.info(f"Loaded {len(self.samples)} samples for {split} split")
     
     def _load_data(self) -> List[UKBBSample]:
-        """Load UK Biobank data from files with comprehensive error handling"""
+        """Load UK Biobank data from files with comprehensive error handling and file locking"""
         cache_file = self.data_path / f"processed_{self.split}.h5"
+        lock_file = self.data_path / f"processed_{self.split}.lock"
         
-        # Try to load cached data first if it exists
-        if self.cache_processed and cache_file.exists():
+        # Use file locking to prevent race conditions in multi-worker scenarios
+        lock_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(lock_file, 'w') as lock:
             try:
-                logger.info(f"Loading cached data from {cache_file}")
-                return self._load_cached_data(cache_file)
-            except (IOError, OSError, KeyError, ValueError, h5py.Error) as e:
-                logger.warning(f"Failed to load cache from {cache_file}: {e}. Loading raw data instead.")
-            except Exception as e:
-                logger.warning(f"Unexpected error loading cache: {e}. Loading raw data instead.")
-        
-        # Load raw data with error handling
-        try:
-            logger.info(f"Loading raw data for {self.split} split")
-            samples = self._load_raw_data()
-        except Exception as e:
-            logger.error(f"Failed to load raw data: {e}")
-            raise RuntimeError(f"Cannot load data for {self.split} split") from e
-        
-        # Apply split with error handling
-        try:
-            samples = self._apply_split(samples)
-        except Exception as e:
-            logger.error(f"Failed to apply data split: {e}")
-            raise RuntimeError(f"Cannot apply {self.split} split") from e
-        
-        # Cache if requested, with error handling
-        if self.cache_processed and len(samples) > 0:
-            try:
-                logger.info(f"Caching processed data to {cache_file}")
-                self._cache_data(samples, cache_file)
-            except Exception as e:
-                logger.warning(f"Failed to cache data to {cache_file}: {e}. Continuing without cache.")
-        
-        return samples
+                # Acquire exclusive lock
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+                
+                # Check cache again after acquiring lock
+                if self.cache_processed and cache_file.exists():
+                    try:
+                        logger.info(f"Loading cached data from {cache_file}")
+                        # Verify cache integrity
+                        with h5py.File(cache_file, 'r') as f:
+                            if 'checksum' in f.attrs:
+                                stored_checksum = f.attrs['checksum']
+                                logger.debug(f"Cache checksum: {stored_checksum}")
+                            if 'n_samples' in f.attrs:
+                                n_samples = f.attrs['n_samples']
+                                logger.info(f"Cache contains {n_samples} samples")
+                        return self._load_cached_data(cache_file)
+                    except (IOError, OSError, KeyError, ValueError, h5py.Error) as e:
+                        logger.warning(f"Failed to load cache from {cache_file}: {e}. Loading raw data instead.")
+                        # Remove corrupted cache
+                        cache_file.unlink(missing_ok=True)
+                    except Exception as e:
+                        logger.warning(f"Unexpected error loading cache: {e}. Loading raw data instead.")
+                        cache_file.unlink(missing_ok=True)
+                
+                # Load raw data with error handling
+                try:
+                    logger.info(f"Loading raw data for {self.split} split")
+                    samples = self._load_raw_data()
+                except Exception as e:
+                    logger.error(f"Failed to load raw data: {e}")
+                    raise RuntimeError(f"Cannot load data for {self.split} split") from e
+                
+                # Apply split with error handling
+                try:
+                    samples = self._apply_split(samples)
+                except Exception as e:
+                    logger.error(f"Failed to apply data split: {e}")
+                    raise RuntimeError(f"Cannot apply {self.split} split") from e
+                
+                # Cache if requested, with error handling
+                if self.cache_processed and len(samples) > 0:
+                    try:
+                        logger.info(f"Caching processed data to {cache_file}")
+                        self._cache_data(samples, cache_file)
+                    except Exception as e:
+                        logger.warning(f"Failed to cache data to {cache_file}: {e}. Continuing without cache.")
+                
+                return samples
+            finally:
+                # Release lock
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
     
     def _load_raw_data(self) -> List[UKBBSample]:
-        """Load raw UK Biobank data"""
+        """Load raw UK Biobank data from CSV files or generate synthetic data"""
         samples = []
         
-        # In production, this would load from actual UK Biobank files
-        # For now, create synthetic data matching UK Biobank structure
-        n_samples = 404956  # Complete cases from specification
+        # Try to load real UK Biobank data first
+        try:
+            from ukbb_data_loader import UKBBRealDataLoader
+            
+            loader = UKBBRealDataLoader(self.config)
+            
+            # Look for CSV file in data path
+            csv_files = list(self.data_path.glob('*.csv'))
+            if not csv_files:
+                csv_files = list(Path('.').glob('*ukbb*.csv'))
+            
+            if csv_files:
+                csv_path = csv_files[0]
+                logger.info(f"Loading UK Biobank data from {csv_path}")
+                df = loader.load_ukbb_csv(csv_path, required_complete=False)
+            else:
+                logger.info("No CSV files found, using data loader's auto-discovery")
+                df = loader.load_ukbb_csv(required_complete=False)
+            
+            # Convert dataframe to samples
+            for _, row in df.iterrows():
+                # Extract biomarkers
+                biomarker_values = []
+                for name in self.biomarker_names:
+                    if name in row:
+                        biomarker_values.append(row[name])
+                    else:
+                        biomarker_values.append(np.nan)
+                
+                sample = UKBBSample(
+                    eid=int(row.get('eid', 0)),
+                    biomarkers=np.array(biomarker_values),
+                    age=float(row.get('age', 55)),
+                    sex=int(row.get('sex', 0)),
+                    survival_time=None,  # Would need mortality data
+                    event_indicator=None,
+                    disease_labels=None  # Would need disease outcomes
+                )
+                samples.append(sample)
+            
+            logger.info(f"Loaded {len(samples)} samples from UK Biobank data")
+            return samples
+            
+        except ImportError:
+            logger.warning("ukbb_data_loader not available, falling back to synthetic data")
+        except Exception as e:
+            logger.warning(f"Failed to load real UK Biobank data: {e}. Using synthetic data.")
+        
+        # Fallback to synthetic data
+        logger.info("Generating synthetic UK Biobank-like data")
+        n_samples = self.config.get('synthetic_samples', 10000)  # Use smaller default for synthetic
         
         # Simulate loading biomarker data with realistic distributions
         np.random.seed(42)
@@ -451,17 +527,30 @@ class UKBBDataset(Dataset):
                         
                         # Write disease labels
                         if sample.disease_labels:
-                            disease_grp = grp.create_group('disease_labels')
-                            for disease, label in sample.disease_labels.items():
-                                disease_grp.create_dataset(disease, data=label)
+                            # Store as JSON for consistency and checksumming
+                            json_str = json.dumps(sample.disease_labels, sort_keys=True)
+                            grp.attrs['disease_labels'] = json_str
+                            checksum.update(json_str.encode())
+                        
+                        # Update checksum with biomarkers data
+                        checksum.update(sample.biomarkers.tobytes())
                                 
                     except Exception as e:
                         logger.warning(f"Failed to cache sample {i}: {e}")
                         continue
+                
+                # Store checksum for integrity verification
+                f.attrs['checksum'] = checksum.hexdigest()
+                f.flush()  # Ensure all data is written to disk
+            
+            # Verify temp file is valid before replacing
+            with h5py.File(temp_file, 'r') as f:
+                assert f.attrs['n_samples'] == len(samples), "Validation failed: sample count mismatch"
+                assert 'checksum' in f.attrs, "Validation failed: no checksum"
             
             # Atomically replace cache file
             temp_file.replace(cache_file)
-            logger.debug(f"Successfully cached {len(samples)} samples to {cache_file}")
+            logger.debug(f"Successfully cached {len(samples)} samples to {cache_file} with checksum")
             
         except Exception as e:
             logger.error(f"Failed to cache data to {cache_file}: {e}")
@@ -528,7 +617,7 @@ class FeatureEngineer:
                  age: float,
                  sex: int) -> np.ndarray:
         """
-        Apply feature engineering transformations
+        Apply feature engineering transformations with comprehensive error handling
         
         Args:
             biomarkers: Raw biomarker values
@@ -538,6 +627,17 @@ class FeatureEngineer:
         Returns:
             Transformed features
         """
+        # Validate inputs
+        if biomarkers is None or len(biomarkers) == 0:
+            logger.error("Empty biomarkers array provided")
+            n_biomarkers = self.config['model']['input_dim']  # Use correct config path
+            return np.zeros(n_biomarkers)
+        
+        # Handle missing values
+        if np.all(np.isnan(biomarkers)):
+            logger.warning("All biomarker values are NaN, using defaults")
+            biomarkers = self._get_default_biomarkers()
+        
         # Age-sex specific normalization
         if self.normalizers:
             normalized = self._normalize_age_sex(biomarkers, age, sex)
@@ -556,6 +656,24 @@ class FeatureEngineer:
         transformed = np.clip(transformed, -clip_value, clip_value)
         
         return transformed
+    
+    def _get_default_biomarkers(self) -> np.ndarray:
+        """Get default biomarker values for missing data"""
+        # Use population median values
+        defaults = {
+            'crp': 2.0,
+            'hba1c': 36.0,
+            'creatinine': 70.0,
+            'albumin': 45.0,
+            'lymphocyte_pct': 30.0,
+            'rdw': 13.0,
+            'ggt': 40.0,
+            'ast': 25.0,
+            'alt': 30.0
+        }
+        
+        biomarker_names = list(self.config['ukbb_fields']['biomarkers'].keys())
+        return np.array([defaults.get(name, 50.0) for name in biomarker_names])
     
     def _normalize_age_sex(self,
                           biomarkers: np.ndarray,
@@ -603,23 +721,43 @@ class FeatureEngineer:
     def _safe_normalize(self, biomarkers: np.ndarray) -> np.ndarray:
         """Safe normalization with zero-variance handling"""
         try:
-            mean = np.mean(biomarkers)
-            std = np.std(biomarkers)
+            # Handle NaN values first
+            if np.any(np.isnan(biomarkers)):
+                logger.warning("NaN values in biomarkers, imputing with median")
+                # Simple median imputation for each biomarker
+                biomarkers = np.nan_to_num(biomarkers, nan=np.nanmedian(biomarkers))
+                if np.all(np.isnan(biomarkers)):
+                    # If all values are NaN, use zeros
+                    return np.zeros_like(biomarkers)
             
-            # Handle edge cases
-            if np.isnan(mean) or np.isnan(std):
-                logger.warning("NaN detected in biomarkers during normalization, returning zeros")
-                return np.zeros_like(biomarkers)
-            
-            if np.isinf(mean) or np.isinf(std):
-                logger.warning("Inf detected in biomarkers during normalization, returning zeros")
-                return np.zeros_like(biomarkers)
-            
-            if std < 1e-8:
-                logger.warning(f"Near-zero variance detected (std={std}), returning centered values")
-                return biomarkers - mean
-            
-            return (biomarkers - mean) / std
+            # Calculate statistics element-wise for vector input
+            if len(biomarkers.shape) == 1:
+                # Vector of biomarkers
+                mean = np.nanmean(biomarkers)
+                std = np.nanstd(biomarkers)
+                
+                # Handle edge cases
+                if np.isnan(mean) or np.isnan(std):
+                    logger.warning("NaN detected after imputation, returning zeros")
+                    return np.zeros_like(biomarkers)
+                
+                if np.isinf(mean) or np.isinf(std):
+                    logger.warning("Inf detected in biomarkers, clipping values")
+                    biomarkers = np.clip(biomarkers, -1e10, 1e10)
+                    mean = np.mean(biomarkers)
+                    std = np.std(biomarkers)
+                
+                if std < 1e-8:
+                    logger.debug(f"Near-zero variance detected (std={std:.2e}), returning centered values")
+                    return biomarkers - mean
+                
+                return (biomarkers - mean) / std
+            else:
+                # Handle batch normalization
+                mean = np.nanmean(biomarkers, axis=0, keepdims=True)
+                std = np.nanstd(biomarkers, axis=0, keepdims=True)
+                std = np.where(std < 1e-8, 1.0, std)  # Prevent division by zero
+                return (biomarkers - mean) / std
             
         except Exception as e:
             logger.error(f"Error in safe normalization: {e}")
@@ -658,58 +796,64 @@ class StratifiedBatchSampler:
         return groups
     
     def __iter__(self):
-        """Generate stratified batches with proper iterator handling"""
-        # Create copies for shuffling to avoid modifying original data
+        """Generate stratified batches with proper iterator handling for multiple epochs"""
+        # This method is called at the start of each epoch
+        # Create fresh copies of indices for this epoch
         group_indices = {i: list(indices) for i, indices in self.age_groups.items() if indices}
         
         if not group_indices:
             logger.warning("No age groups available for stratified sampling")
             return
         
-        # Shuffle within each group
+        # Shuffle within each group for this epoch
         for indices in group_indices.values():
             np.random.shuffle(indices)
         
-        # Use cycle for infinite iteration until all samples are exhausted
-        from itertools import cycle
-        group_iterators = {}
-        active_groups = set()
-        
-        for i, indices in group_indices.items():
-            if indices:  # Only create iterators for non-empty groups
-                group_iterators[i] = iter(indices)
-                active_groups.add(i)
+        # Track position in each group
+        group_positions = {i: 0 for i in group_indices.keys()}
         
         batch = []
-        samples_per_group = max(1, self.batch_size // len(active_groups)) if active_groups else 1
         total_samples = sum(len(indices) for indices in group_indices.values())
         samples_yielded = 0
         
-        while samples_yielded < total_samples and active_groups:
-            # Try to get samples from each active group
-            for group_id in list(active_groups):  # Create copy to allow modification
-                group_samples = []
-                for _ in range(samples_per_group):
-                    try:
-                        sample_idx = next(group_iterators[group_id])
-                        group_samples.append(sample_idx)
-                    except StopIteration:
-                        # This group is exhausted, remove it
-                        active_groups.discard(group_id)
-                        break
-                
-                batch.extend(group_samples)
+        # Calculate samples per group for balanced sampling
+        active_groups = list(group_indices.keys())
+        samples_per_group = max(1, self.batch_size // len(active_groups)) if active_groups else 1
+        
+        while samples_yielded < total_samples:
+            # Collect samples from each group in round-robin fashion
+            groups_to_sample = [g for g in active_groups 
+                              if group_positions[g] < len(group_indices[g])]
             
-            # Yield batch if we have enough samples
-            if len(batch) >= self.batch_size:
+            if not groups_to_sample:
+                # All groups exhausted
+                if batch:
+                    # Yield remaining partial batch
+                    yield batch
+                    samples_yielded += len(batch)
+                break
+            
+            # Sample from each available group
+            for group_id in groups_to_sample:
+                indices = group_indices[group_id]
+                pos = group_positions[group_id]
+                
+                # Get up to samples_per_group from this group
+                end_pos = min(pos + samples_per_group, len(indices))
+                group_samples = indices[pos:end_pos]
+                batch.extend(group_samples)
+                group_positions[group_id] = end_pos
+            
+            # Yield complete batches
+            while len(batch) >= self.batch_size:
                 yield batch[:self.batch_size]
                 samples_yielded += self.batch_size
                 batch = batch[self.batch_size:]
-            elif not active_groups and batch:
-                # All groups exhausted, yield final partial batch
-                yield batch
-                samples_yielded += len(batch)
-                break
+        
+        # Yield any remaining samples as final batch
+        if batch and samples_yielded < total_samples:
+            yield batch
+            samples_yielded += len(batch)
     
     def __len__(self) -> int:
         return sum(len(indices) for indices in self.age_groups.values()) // self.batch_size

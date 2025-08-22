@@ -366,17 +366,19 @@ class HENAWModel(nn.Module):
             creat_alb = torch.clamp(creat_alb, min=-1e6, max=1e6)
             features.append(creat_alb)
             
-            # AST/ALT ratio (indices 7, 8) with safe division
+            # AST/ALT ratio (indices 7, 8) with robust safe division
             ast = x[:, 7]
             alt = x[:, 8]
             
-            # Ensure ALT is never zero or too close to zero
-            alt_safe = torch.where(torch.abs(alt) < 1e-8, 
-                                 torch.sign(alt) * 1e-8 + 1e-8,  # Small positive number
-                                 alt)
+            # Use more robust division protection
+            # When ALT is close to zero, use default ratio of 1.0
+            ast_alt_ratio = torch.where(
+                torch.abs(alt) < 1e-6,  # Use larger epsilon for stability
+                torch.ones_like(ast),   # Default ratio of 1.0 when ALT is near zero
+                ast / alt                # Normal division when ALT is safe
+            )
             
-            ast_alt_ratio = ast / alt_safe
-            # Clamp ratio to reasonable bounds (0.1 to 10)
+            # Clamp ratio to reasonable clinical bounds (0.1 to 10)
             ast_alt_ratio = torch.clamp(ast_alt_ratio, min=0.1, max=10.0)
             features.append(ast_alt_ratio)
             

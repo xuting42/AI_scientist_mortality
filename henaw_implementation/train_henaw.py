@@ -54,7 +54,15 @@ class Trainer:
             experiment_name: Optional experiment name for logging
         """
         self.config = config
-        self.device = torch.device(device if torch.cuda.is_available() else 'cpu')
+        
+        # Proper device selection with fallback and logging
+        if device == 'cuda' and not torch.cuda.is_available():
+            logger.warning("CUDA requested but not available. Using CPU.")
+            self.device = torch.device('cpu')
+        else:
+            self.device = torch.device(device if torch.cuda.is_available() else 'cpu')
+        
+        logger.info(f"Using device: {self.device}")
         
         # Set experiment name
         if experiment_name is None:
@@ -77,10 +85,13 @@ class Trainer:
         # Initialize scheduler
         self.scheduler = self.setup_scheduler()
         
-        # Mixed precision training
-        self.use_amp = config['infrastructure'].get('mixed_precision', False)
+        # Mixed precision training - only enable if CUDA available
+        self.use_amp = config['infrastructure'].get('mixed_precision', False) and self.device.type == 'cuda'
         if self.use_amp:
             self.scaler = GradScaler()
+            logger.info("Mixed precision training enabled")
+        elif config['infrastructure'].get('mixed_precision', False):
+            logger.info("Mixed precision requested but not available on CPU")
         
         # Initialize evaluator
         self.evaluator = Evaluator(config)
@@ -251,6 +262,12 @@ class Trainer:
                         self.scaler.update()
                     else:
                         loss.backward()
+                        
+                        # Add gradient clipping for stability
+                        max_grad_norm = self.config['training'].get('gradient_clip_norm', 1.0)
+                        if max_grad_norm > 0:
+                            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=max_grad_norm)
+                        
                         self.optimizer.step()
                     
                     # Update metrics
@@ -483,18 +500,65 @@ class Trainer:
             torch.save(checkpoint, epoch_path)
     
     def load_checkpoint(self, checkpoint_path: str) -> None:
-        """Load model checkpoint"""
-        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        """Load model checkpoint with comprehensive error handling"""
+        checkpoint_path = Path(checkpoint_path)
         
-        self.model.load_state_dict(checkpoint['model_state_dict'])
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        # Validate checkpoint exists
+        if not checkpoint_path.exists():
+            raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
         
-        if self.scheduler and checkpoint['scheduler_state_dict']:
-            self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        if not checkpoint_path.is_file():
+            raise ValueError(f"Checkpoint path is not a file: {checkpoint_path}")
         
-        self.current_epoch = checkpoint['epoch']
+        file_size_mb = checkpoint_path.stat().st_size / (1024 * 1024)
+        if file_size_mb < 0.1:
+            raise ValueError(f"Checkpoint file too small ({file_size_mb:.1f}MB), likely corrupted")
         
-        logger.info(f"Loaded checkpoint from epoch {self.current_epoch}")
+        logger.info(f"Loading checkpoint from {checkpoint_path} ({file_size_mb:.1f}MB)")
+        
+        try:
+            checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        except Exception as e:
+            raise RuntimeError(f"Failed to load checkpoint: {e}") from e
+        
+        # Validate checkpoint structure
+        required_keys = ['model_state_dict', 'optimizer_state_dict', 'epoch']
+        missing_keys = [key for key in required_keys if key not in checkpoint]
+        if missing_keys:
+            logger.warning(f"Checkpoint missing keys: {missing_keys}")
+        
+        # Load model state with error handling
+        if 'model_state_dict' in checkpoint:
+            try:
+                self.model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+            except Exception as e:
+                logger.error(f"Failed to load model state: {e}")
+                raise
+        else:
+            logger.warning("No model state dict in checkpoint")
+        
+        # Load optimizer state with error handling
+        if 'optimizer_state_dict' in checkpoint:
+            try:
+                self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            except Exception as e:
+                logger.warning(f"Failed to load optimizer state: {e}. Reinitializing optimizer.")
+        
+        # Load scheduler state if available
+        if self.scheduler and 'scheduler_state_dict' in checkpoint:
+            try:
+                self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+            except Exception as e:
+                logger.warning(f"Failed to load scheduler state: {e}")
+        
+        # Load epoch number
+        self.current_epoch = checkpoint.get('epoch', 0)
+        
+        # Load best metric if available
+        if 'best_val_metric' in checkpoint:
+            self.best_val_metric = checkpoint['best_val_metric']
+        
+        logger.info(f"Successfully loaded checkpoint from epoch {self.current_epoch}")
     
     def check_early_stopping(self, metrics: Dict[str, float], patience: int = 20) -> bool:
         """Check early stopping criteria"""
