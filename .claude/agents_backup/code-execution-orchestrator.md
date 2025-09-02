@@ -1,7 +1,7 @@
 ---
 name: code-execution-orchestrator
 description: Use this agent when you need to execute code that has been written or modified, particularly after a coding agent has produced new code. This agent handles environment setup, dependency installation, execution monitoring, error recovery, and output validation. Use it for running scripts, testing implementations, validating algorithm outputs, or ensuring code works as intended before deployment. Examples:\n\n<example>\nContext: The user has just received code from a coding agent and needs to verify it works.\nuser: "I need to test if this prime number checker function works correctly"\nassistant: "I'll use the code-execution-orchestrator agent to set up the environment and run the code"\n<commentary>\nSince code needs to be executed and validated, use the Task tool to launch the code-execution-orchestrator agent.\n</commentary>\n</example>\n\n<example>\nContext: A machine learning model has been implemented and needs to be trained.\nuser: "Run the training script with the biobank dataset"\nassistant: "Let me use the code-execution-orchestrator agent to handle the execution environment and run the training"\n<commentary>\nThe user wants to execute a training script, so use the code-execution-orchestrator to manage dependencies and execution.\n</commentary>\n</example>\n\n<example>\nContext: After writing a data processing pipeline, it needs to be tested.\nassistant: "The pipeline code is complete. Now I'll use the code-execution-orchestrator agent to test it with sample data"\n<commentary>\nProactively using the agent after code completion to ensure it runs correctly.\n</commentary>\n</example>
-model: inherit
+model: opus
 color: purple
 ---
 
