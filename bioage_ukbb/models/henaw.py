@@ -16,6 +16,44 @@ import xgboost as xgb
 import warnings
 
 
+class TemporalScaleEncoder(nn.Module):
+    """Encoder for temporal scale-specific features."""
+    
+    def __init__(
+        self,
+        input_dim: int,
+        hidden_dim: int,
+        scale_name: str,
+        dropout: float = 0.2
+    ):
+        super().__init__()
+        self.scale_name = scale_name
+        
+        # Scale-specific encoding network
+        self.encoder = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim * 2),
+            nn.LayerNorm(hidden_dim * 2),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim * 2, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.GELU(),
+            nn.Dropout(dropout / 2)
+        )
+        
+        # Scale-specific gating mechanism
+        self.gate = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.Sigmoid()
+        )
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply scale-specific encoding with gating."""
+        encoded = self.encoder(x)
+        gate = self.gate(x)
+        return encoded * gate
+
+
 class HierarchicalAttention(nn.Module):
     """Hierarchical attention mechanism for multi-scale temporal features."""
     
@@ -162,15 +200,17 @@ class HierarchicalAttention(nn.Module):
 class EnsemblePredictor(nn.Module):
     """Ensemble predictor combining Ridge, Random Forest, and XGBoost."""
     
-    def __init__(self, config: Any):
+    def __init__(self, config: Any, input_dim: int = 128):
         """
         Initialize ensemble predictor.
         
         Args:
             config: HENAW configuration
+            input_dim: Input feature dimension for ensemble
         """
         super().__init__()
         self.config = config
+        self.input_dim = input_dim
         
         # Initialize base models
         self.ridge = None
@@ -282,39 +322,40 @@ class HENAW(nn.Module):
         super().__init__()
         self.config = config
         
-        # Calculate input dimensions
-        n_features = len(config.input_features)
+        # Calculate input dimensions based on tier
+        self.tier = getattr(config, 'tier', 1)
+        self.n_features = self._get_tier_features()
         
-        # Feature extraction layers for each temporal scale
-        self.rapid_encoder = nn.Sequential(
-            nn.Linear(n_features, 256),
-            nn.ReLU(),
-            nn.BatchNorm1d(256),
-            nn.Dropout(0.2),
-            nn.Linear(256, 128),
-            nn.ReLU(),
-            nn.BatchNorm1d(128)
+        # Temporal scale encoders with tier-specific architectures
+        hidden_dim = 128
+        
+        # Rapid aging indicators (metabolic) - weeks to months
+        self.rapid_encoder = TemporalScaleEncoder(
+            input_dim=self.n_features,
+            hidden_dim=hidden_dim,
+            scale_name='rapid',
+            dropout=config.attention_dropout
         )
         
-        self.intermediate_encoder = nn.Sequential(
-            nn.Linear(n_features, 256),
-            nn.ReLU(),
-            nn.BatchNorm1d(256),
-            nn.Dropout(0.2),
-            nn.Linear(256, 128),
-            nn.ReLU(),
-            nn.BatchNorm1d(128)
+        # Intermediate aging markers (organ function) - months to years
+        self.intermediate_encoder = TemporalScaleEncoder(
+            input_dim=self.n_features,
+            hidden_dim=hidden_dim,
+            scale_name='intermediate',
+            dropout=config.attention_dropout
         )
         
-        self.slow_encoder = nn.Sequential(
-            nn.Linear(n_features, 256),
-            nn.ReLU(),
-            nn.BatchNorm1d(256),
-            nn.Dropout(0.2),
-            nn.Linear(256, 128),
-            nn.ReLU(),
-            nn.BatchNorm1d(128)
+        # Slow aging processes (structural) - years to decades
+        self.slow_encoder = TemporalScaleEncoder(
+            input_dim=self.n_features,
+            hidden_dim=hidden_dim,
+            scale_name='slow',
+            dropout=config.attention_dropout
         )
+        
+        # Scale-specific weight learning
+        self.scale_weights = nn.Parameter(torch.ones(3) / 3)
+        self.chronological_adjustment = nn.Parameter(torch.tensor(0.1))
         
         # Hierarchical attention
         self.attention = HierarchicalAttention(
@@ -348,8 +389,17 @@ class HENAW(nn.Module):
             nn.Linear(64, 1)
         )
         
-        # Ensemble predictor
-        self.ensemble = EnsemblePredictor(config)
+        # Ensemble predictor with proper input dimension
+        self.ensemble = EnsemblePredictor(config, input_dim=128)
+        
+        # Uncertainty quantification layers
+        if config.use_monte_carlo_dropout:
+            self.uncertainty_head = nn.Sequential(
+                nn.Linear(128, 64),
+                nn.ReLU(),
+                nn.Dropout(config.mc_dropout_rate),
+                nn.Linear(64, 2)  # Mean and log variance
+            )
         
         # Monte Carlo dropout for uncertainty
         self.mc_dropout = nn.Dropout(config.mc_dropout_rate) if config.use_monte_carlo_dropout else None
@@ -368,28 +418,81 @@ class HENAW(nn.Module):
                 nn.init.ones_(module.weight)
                 nn.init.zeros_(module.bias)
     
+    def _get_tier_features(self) -> int:
+        """Get number of features based on tier."""
+        tier_features = {
+            1: 8,   # Essential biomarkers
+            2: 15,  # Standard biomarkers
+            3: 25   # Comprehensive biomarkers
+        }
+        return tier_features.get(self.tier, 8)
+    
+    def _split_features_by_scale(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
+        """
+        Split features into temporal scales based on biological timescales.
+        
+        Args:
+            x: Input features tensor
+        
+        Returns:
+            Dictionary with rapid, intermediate, and slow features
+        """
+        # Define feature indices for each scale (example mapping)
+        rapid_indices = [0, 1, 2, 3]  # Glucose, HbA1c, CRP, WBC
+        intermediate_indices = [4, 5, 6, 7]  # Creatinine, Cystatin-C, ALT, AST
+        slow_indices = list(range(8, min(self.n_features, x.shape[1])))
+        
+        # Ensure we don't exceed available features
+        rapid_indices = [i for i in rapid_indices if i < x.shape[1]]
+        intermediate_indices = [i for i in intermediate_indices if i < x.shape[1]]
+        slow_indices = [i for i in slow_indices if i < x.shape[1]]
+        
+        # Pad if necessary to maintain consistent dimensions
+        rapid_features = x[:, rapid_indices] if rapid_indices else torch.zeros(x.shape[0], 1, device=x.device)
+        intermediate_features = x[:, intermediate_indices] if intermediate_indices else torch.zeros(x.shape[0], 1, device=x.device)
+        slow_features = x[:, slow_indices] if slow_indices else torch.zeros(x.shape[0], 1, device=x.device)
+        
+        # Pad to ensure all have same dimension for encoding
+        target_dim = self.n_features
+        rapid_features = F.pad(rapid_features, (0, target_dim - rapid_features.shape[1]))
+        intermediate_features = F.pad(intermediate_features, (0, target_dim - intermediate_features.shape[1]))
+        slow_features = F.pad(slow_features, (0, target_dim - slow_features.shape[1]))
+        
+        return {
+            'rapid': rapid_features,
+            'intermediate': intermediate_features,
+            'slow': slow_features
+        }
+    
     def extract_temporal_features(
         self,
-        inputs: Dict[str, torch.Tensor]
+        inputs: Union[Dict[str, torch.Tensor], torch.Tensor]
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Extract features at different temporal scales.
         
         Args:
-            inputs: Dictionary containing temporal features
+            inputs: Either dictionary containing temporal features or raw tensor
         
         Returns:
             Tuple of (rapid, intermediate, slow) features
         """
-        rapid_features = self.rapid_encoder(inputs['rapid'])
-        intermediate_features = self.intermediate_encoder(inputs['intermediate'])
-        slow_features = self.slow_encoder(inputs['slow'])
+        # Handle both dictionary and tensor inputs
+        if isinstance(inputs, torch.Tensor):
+            temporal_features = self._split_features_by_scale(inputs)
+        else:
+            temporal_features = inputs
+        
+        rapid_features = self.rapid_encoder(temporal_features['rapid'])
+        intermediate_features = self.intermediate_encoder(temporal_features['intermediate'])
+        slow_features = self.slow_encoder(temporal_features['slow'])
         
         return rapid_features, intermediate_features, slow_features
     
     def forward(
         self,
-        inputs: Dict[str, torch.Tensor],
+        inputs: Union[Dict[str, torch.Tensor], torch.Tensor],
+        chronological_age: Optional[torch.Tensor] = None,
         return_attention: bool = False,
         return_uncertainty: bool = False
     ) -> Dict[str, torch.Tensor]:
@@ -397,10 +500,8 @@ class HENAW(nn.Module):
         Forward pass through HENAW.
         
         Args:
-            inputs: Dictionary containing:
-                - 'rapid': Rapid temporal features
-                - 'intermediate': Intermediate temporal features
-                - 'slow': Slow temporal features
+            inputs: Either dictionary containing temporal features or raw feature tensor
+            chronological_age: Optional chronological age for adjustment
             return_attention: Whether to return attention weights
             return_uncertainty: Whether to compute uncertainty estimates
         
@@ -418,22 +519,49 @@ class HENAW(nn.Module):
         # Feature fusion
         fused_features = self.fusion_network(attended_features)
         
-        # Neural network prediction
-        nn_prediction = self.prediction_head(fused_features)
+        # Base prediction
+        if self.config.use_monte_carlo_dropout and hasattr(self, 'uncertainty_head'):
+            uncertainty_output = self.uncertainty_head(fused_features)
+            nn_prediction = uncertainty_output[:, 0:1]  # Mean prediction
+            log_variance = uncertainty_output[:, 1:2]
+            epistemic_uncertainty = torch.exp(0.5 * log_variance)
+        else:
+            nn_prediction = self.prediction_head(fused_features)
+            epistemic_uncertainty = None
+        
+        # Apply scale weighting
+        scale_weights = F.softmax(self.scale_weights, dim=0)
+        scale_contributions = torch.stack([rapid_feat.mean(1), intermediate_feat.mean(1), slow_feat.mean(1)], dim=1)
+        weighted_contribution = (scale_contributions * scale_weights.unsqueeze(0)).sum(dim=1, keepdim=True)
+        
+        # Combine with chronological age adjustment if provided
+        if chronological_age is not None:
+            adjusted_prediction = nn_prediction + self.chronological_adjustment * chronological_age.unsqueeze(1)
+        else:
+            adjusted_prediction = nn_prediction + weighted_contribution * 0.1
         
         outputs = {
-            'prediction': nn_prediction,
-            'features': fused_features
+            'prediction': adjusted_prediction,
+            'features': fused_features,
+            'scale_weights': scale_weights,
+            'scale_contributions': scale_contributions
         }
         
         # Add attention weights if requested
         if return_attention:
             outputs['attention_weights'] = attention_weights
         
-        # Compute uncertainty if requested
+        # Add uncertainty if computed
+        if epistemic_uncertainty is not None:
+            outputs['epistemic_uncertainty'] = epistemic_uncertainty
+        
+        # Compute aleatoric uncertainty if requested
         if return_uncertainty and self.config.use_monte_carlo_dropout:
-            uncertainty = self._compute_uncertainty(inputs)
-            outputs['uncertainty'] = uncertainty
+            aleatoric_uncertainty = self._compute_uncertainty(inputs)
+            outputs['aleatoric_uncertainty'] = aleatoric_uncertainty
+            outputs['total_uncertainty'] = torch.sqrt(
+                epistemic_uncertainty**2 + aleatoric_uncertainty**2
+            ) if epistemic_uncertainty is not None else aleatoric_uncertainty
         
         return outputs
     

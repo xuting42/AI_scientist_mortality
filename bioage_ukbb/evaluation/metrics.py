@@ -1,503 +1,594 @@
 """
-Evaluation metrics for biological age algorithms.
+Evaluation metrics for biological age estimation models.
+
+Includes standard regression metrics, survival analysis metrics,
+and biological age-specific evaluations.
 """
 
 import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader
 import numpy as np
-from typing import Dict, List, Optional, Tuple, Any, Union
+from typing import Dict, List, Tuple, Optional, Any
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from scipy import stats
 from scipy.stats import pearsonr, spearmanr
+from lifelines import CoxPHFitter
 from lifelines.utils import concordance_index
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.calibration import calibration_curve
+import logging
+from tqdm import tqdm
 import warnings
 
+logger = logging.getLogger(__name__)
 
-class BioAgeMetrics:
-    """Comprehensive metrics for biological age evaluation."""
+
+class BioAgeEvaluator:
+    """Comprehensive evaluator for biological age models."""
     
-    def __init__(self):
-        """Initialize metrics calculator."""
-        self.results = {}
-    
-    def calculate_basic_metrics(
+    def __init__(
         self,
-        predictions: np.ndarray,
-        targets: np.ndarray,
-        sample_weights: Optional[np.ndarray] = None
+        model: nn.Module,
+        config: Any,
+        device: str = 'cuda'
+    ):
+        """
+        Initialize evaluator.
+        
+        Args:
+            model: Trained biological age model
+            config: Configuration object
+            device: Device for evaluation
+        """
+        self.model = model
+        self.config = config
+        self.device = device
+        self.model.to(device)
+        self.model.eval()
+    
+    def evaluate(
+        self,
+        dataloader: DataLoader,
+        compute_survival: bool = True,
+        compute_uncertainty: bool = True
     ) -> Dict[str, float]:
         """
-        Calculate basic regression metrics.
+        Comprehensive model evaluation.
         
         Args:
-            predictions: Predicted ages
-            targets: True ages
-            sample_weights: Optional sample weights
+            dataloader: Test dataloader
+            compute_survival: Whether to compute survival metrics
+            compute_uncertainty: Whether to compute uncertainty metrics
         
         Returns:
-            Dictionary of metrics
+            Dictionary of evaluation metrics
         """
-        # Ensure numpy arrays
-        predictions = np.asarray(predictions).flatten()
-        targets = np.asarray(targets).flatten()
+        predictions = []
+        targets = []
+        uncertainties = []
+        features_list = []
         
-        # Basic metrics
-        mae = mean_absolute_error(targets, predictions, sample_weight=sample_weights)
-        mse = mean_squared_error(targets, predictions, sample_weight=sample_weights)
-        rmse = np.sqrt(mse)
+        # Collect predictions
+        logger.info("Collecting predictions...")
+        with torch.no_grad():
+            for batch_idx, (inputs, batch_targets) in enumerate(tqdm(dataloader)):
+                # Move to device
+                inputs = self._move_to_device(inputs)
+                batch_targets = batch_targets.to(self.device)
+                
+                # Get predictions
+                outputs = self.model(inputs, return_uncertainty=compute_uncertainty)
+                batch_predictions = outputs['prediction'].squeeze()
+                
+                # Store results
+                predictions.append(batch_predictions.cpu().numpy())
+                targets.append(batch_targets.cpu().numpy())
+                
+                if compute_uncertainty and 'uncertainty' in outputs:
+                    uncertainties.append(outputs['uncertainty'].cpu().numpy())
+                
+                if 'features' in outputs:
+                    features_list.append(outputs['features'].cpu().numpy())
         
-        # R-squared
-        r2 = r2_score(targets, predictions, sample_weight=sample_weights)
+        # Concatenate results
+        predictions = np.concatenate(predictions)
+        targets = np.concatenate(targets).flatten()
         
-        # Correlation coefficients
-        pearson_r, pearson_p = pearsonr(predictions, targets)
-        spearman_r, spearman_p = spearmanr(predictions, targets)
+        if uncertainties:
+            uncertainties = np.concatenate(uncertainties)
         
-        # Mean absolute percentage error
-        mape = np.mean(np.abs((targets - predictions) / (targets + 1e-8))) * 100
+        if features_list:
+            features = np.concatenate(features_list)
+        else:
+            features = None
         
-        # Bias (systematic error)
-        bias = np.mean(predictions - targets)
+        # Compute metrics
+        metrics = self._compute_regression_metrics(predictions, targets)
         
-        metrics = {
-            'mae': mae,
-            'mse': mse,
-            'rmse': rmse,
-            'r2': r2,
-            'pearson_r': pearson_r,
-            'pearson_p': pearson_p,
-            'spearman_r': spearman_r,
-            'spearman_p': spearman_p,
-            'mape': mape,
-            'bias': bias
-        }
-        
-        return metrics
-    
-    def calculate_age_acceleration(
-        self,
-        biological_age: np.ndarray,
-        chronological_age: np.ndarray
-    ) -> Dict[str, Any]:
-        """
-        Calculate age acceleration metrics.
-        
-        Args:
-            biological_age: Predicted biological age
-            chronological_age: Chronological age
-        
-        Returns:
-            Dictionary with age acceleration metrics
-        """
-        # Age acceleration (residuals from regression)
-        z = np.polyfit(chronological_age, biological_age, 1)
-        p = np.poly1d(z)
-        expected_bio_age = p(chronological_age)
-        
-        age_acceleration = biological_age - expected_bio_age
-        
-        # Alternative: simple difference
-        age_gap = biological_age - chronological_age
-        
-        # Statistics
-        metrics = {
-            'age_acceleration_mean': np.mean(age_acceleration),
-            'age_acceleration_std': np.std(age_acceleration),
-            'age_acceleration_median': np.median(age_acceleration),
-            'age_gap_mean': np.mean(age_gap),
-            'age_gap_std': np.std(age_gap),
-            'accelerated_aging_proportion': np.mean(age_acceleration > 0),
-            'regression_slope': z[0],
-            'regression_intercept': z[1],
-            'age_acceleration_values': age_acceleration,
-            'age_gap_values': age_gap
-        }
-        
-        return metrics
-    
-    def calculate_survival_metrics(
-        self,
-        biological_age: np.ndarray,
-        event_times: np.ndarray,
-        event_indicators: np.ndarray,
-        chronological_age: Optional[np.ndarray] = None
-    ) -> Dict[str, float]:
-        """
-        Calculate survival analysis metrics.
-        
-        Args:
-            biological_age: Predicted biological age
-            event_times: Time to event (e.g., mortality)
-            event_indicators: Binary event indicators (1=event, 0=censored)
-            chronological_age: Optional chronological age for comparison
-        
-        Returns:
-            Dictionary of survival metrics
-        """
-        # C-index for biological age
-        c_index_bio = concordance_index(
-            event_times,
-            -biological_age,  # Negative because higher age = higher risk
-            event_indicators
-        )
-        
-        metrics = {'c_index_biological': c_index_bio}
-        
-        # Compare with chronological age if provided
-        if chronological_age is not None:
-            c_index_chrono = concordance_index(
-                event_times,
-                -chronological_age,
-                event_indicators
+        # Add uncertainty metrics if available
+        if uncertainties and len(uncertainties) > 0:
+            uncertainty_metrics = self._compute_uncertainty_metrics(
+                predictions, targets, uncertainties
             )
-            metrics['c_index_chronological'] = c_index_chrono
-            metrics['c_index_improvement'] = c_index_bio - c_index_chrono
+            metrics.update(uncertainty_metrics)
         
-        # Hazard ratio estimation (simplified)
-        if chronological_age is not None:
-            age_acceleration = biological_age - chronological_age
-            # Stratify by age acceleration
-            accelerated = age_acceleration > np.median(age_acceleration)
-            
-            # Calculate event rates
-            event_rate_accelerated = np.mean(event_indicators[accelerated])
-            event_rate_normal = np.mean(event_indicators[~accelerated])
-            
-            if event_rate_normal > 0:
-                hazard_ratio = event_rate_accelerated / event_rate_normal
-            else:
-                hazard_ratio = np.nan
-            
-            metrics['hazard_ratio'] = hazard_ratio
-            metrics['event_rate_accelerated'] = event_rate_accelerated
-            metrics['event_rate_normal'] = event_rate_normal
+        # Add survival metrics if mortality labels available
+        if compute_survival and hasattr(dataloader.dataset, 'get_mortality_labels'):
+            mortality_labels = dataloader.dataset.get_mortality_labels()
+            if mortality_labels is not None and len(mortality_labels) == len(predictions):
+                survival_metrics = self._compute_survival_metrics(
+                    predictions, targets, mortality_labels
+                )
+                metrics.update(survival_metrics)
+        
+        # Add age acceleration metrics
+        age_acceleration_metrics = self._compute_age_acceleration_metrics(
+            predictions, targets
+        )
+        metrics.update(age_acceleration_metrics)
+        
+        # Model-specific metrics
+        if hasattr(self.model, 'get_feature_importance'):
+            metrics['feature_importance'] = self.model.get_feature_importance()
         
         return metrics
     
-    def calculate_subgroup_metrics(
-        self,
-        predictions: np.ndarray,
-        targets: np.ndarray,
-        groups: np.ndarray,
-        group_names: Optional[List[str]] = None
-    ) -> Dict[str, Dict[str, float]]:
-        """
-        Calculate metrics for different subgroups.
-        
-        Args:
-            predictions: Predicted ages
-            targets: True ages
-            groups: Group labels for each sample
-            group_names: Optional names for groups
-        
-        Returns:
-            Dictionary of metrics per group
-        """
-        unique_groups = np.unique(groups)
-        
-        if group_names is None:
-            group_names = [f"Group_{g}" for g in unique_groups]
-        
-        subgroup_metrics = {}
-        
-        for group_id, group_name in zip(unique_groups, group_names):
-            mask = groups == group_id
-            group_preds = predictions[mask]
-            group_targets = targets[mask]
-            
-            if len(group_preds) > 1:
-                metrics = self.calculate_basic_metrics(group_preds, group_targets)
-                subgroup_metrics[group_name] = metrics
-            else:
-                subgroup_metrics[group_name] = {'n_samples': len(group_preds)}
-        
-        return subgroup_metrics
+    def _move_to_device(self, inputs: Any) -> Any:
+        """Move inputs to device."""
+        if isinstance(inputs, dict):
+            return {k: v.to(self.device) if torch.is_tensor(v) else v 
+                   for k, v in inputs.items()}
+        elif torch.is_tensor(inputs):
+            return inputs.to(self.device)
+        else:
+            return inputs
     
-    def calculate_calibration_metrics(
+    def _compute_regression_metrics(
         self,
         predictions: np.ndarray,
-        targets: np.ndarray,
-        n_bins: int = 10
-    ) -> Dict[str, Any]:
-        """
-        Calculate calibration metrics.
+        targets: np.ndarray
+    ) -> Dict[str, float]:
+        """Compute standard regression metrics."""
+        mae = mean_absolute_error(targets, predictions)
+        rmse = np.sqrt(mean_squared_error(targets, predictions))
+        r2 = r2_score(targets, predictions)
         
-        Args:
-            predictions: Predicted ages
-            targets: True ages
-            n_bins: Number of bins for calibration
+        # Correlation metrics
+        pearson_r, pearson_p = pearsonr(targets, predictions)
+        spearman_r, spearman_p = spearmanr(targets, predictions)
         
-        Returns:
-            Dictionary with calibration metrics
-        """
-        # Bin predictions
-        bin_edges = np.percentile(predictions, np.linspace(0, 100, n_bins + 1))
-        bin_indices = np.digitize(predictions, bin_edges[:-1]) - 1
-        bin_indices = np.clip(bin_indices, 0, n_bins - 1)
-        
-        # Calculate mean prediction and target per bin
-        calibration_data = []
-        for i in range(n_bins):
-            mask = bin_indices == i
-            if np.sum(mask) > 0:
-                mean_pred = np.mean(predictions[mask])
-                mean_true = np.mean(targets[mask])
-                n_samples = np.sum(mask)
-                calibration_data.append({
-                    'bin': i,
-                    'mean_prediction': mean_pred,
-                    'mean_target': mean_true,
-                    'n_samples': n_samples,
-                    'calibration_error': mean_pred - mean_true
-                })
-        
-        calibration_df = pd.DataFrame(calibration_data)
-        
-        # Expected Calibration Error (ECE)
-        if len(calibration_df) > 0:
-            weights = calibration_df['n_samples'] / len(predictions)
-            ece = np.sum(weights * np.abs(calibration_df['calibration_error']))
-        else:
-            ece = np.nan
-        
-        # Maximum Calibration Error (MCE)
-        if len(calibration_df) > 0:
-            mce = np.max(np.abs(calibration_df['calibration_error']))
-        else:
-            mce = np.nan
+        # Percentage within X years
+        errors = np.abs(predictions - targets)
+        within_3 = np.mean(errors <= 3) * 100
+        within_5 = np.mean(errors <= 5) * 100
+        within_10 = np.mean(errors <= 10) * 100
         
         return {
-            'ece': ece,
-            'mce': mce,
-            'calibration_data': calibration_df,
-            'n_bins': n_bins
+            'mae': float(mae),
+            'rmse': float(rmse),
+            'r2': float(r2),
+            'pearson': float(pearson_r),
+            'pearson_p': float(pearson_p),
+            'spearman': float(spearman_r),
+            'spearman_p': float(spearman_p),
+            'within_3_years': float(within_3),
+            'within_5_years': float(within_5),
+            'within_10_years': float(within_10),
+            'median_error': float(np.median(errors)),
+            'std_error': float(np.std(errors))
         }
     
-    def calculate_uncertainty_metrics(
+    def _compute_uncertainty_metrics(
         self,
         predictions: np.ndarray,
         targets: np.ndarray,
         uncertainties: np.ndarray
     ) -> Dict[str, float]:
-        """
-        Calculate uncertainty quantification metrics.
-        
-        Args:
-            predictions: Predicted ages
-            targets: True ages
-            uncertainties: Uncertainty estimates
-        
-        Returns:
-            Dictionary of uncertainty metrics
-        """
+        """Compute uncertainty-related metrics."""
+        # Calibration: Are high-uncertainty predictions less accurate?
         errors = np.abs(predictions - targets)
         
-        # Correlation between uncertainty and error
-        uncertainty_error_corr, _ = pearsonr(uncertainties, errors)
+        # Split by uncertainty quartiles
+        uncertainty_quartiles = np.percentile(uncertainties, [25, 50, 75])
         
-        # Uncertainty calibration (are uncertainties well-calibrated?)
-        # Sort by uncertainty and check if errors increase
-        sorted_idx = np.argsort(uncertainties)
-        sorted_errors = errors[sorted_idx]
-        sorted_uncertainties = uncertainties[sorted_idx]
+        q1_mask = uncertainties <= uncertainty_quartiles[0]
+        q2_mask = (uncertainties > uncertainty_quartiles[0]) & (uncertainties <= uncertainty_quartiles[1])
+        q3_mask = (uncertainties > uncertainty_quartiles[1]) & (uncertainties <= uncertainty_quartiles[2])
+        q4_mask = uncertainties > uncertainty_quartiles[2]
         
-        # Bin into quantiles
-        n_bins = 10
-        bin_size = len(predictions) // n_bins
+        mae_by_uncertainty = {
+            'q1_mae': float(errors[q1_mask].mean()) if q1_mask.any() else 0,
+            'q2_mae': float(errors[q2_mask].mean()) if q2_mask.any() else 0,
+            'q3_mae': float(errors[q3_mask].mean()) if q3_mask.any() else 0,
+            'q4_mae': float(errors[q4_mask].mean()) if q4_mask.any() else 0
+        }
         
-        calibration_scores = []
-        for i in range(n_bins):
-            start_idx = i * bin_size
-            end_idx = (i + 1) * bin_size if i < n_bins - 1 else len(predictions)
-            
-            bin_errors = sorted_errors[start_idx:end_idx]
-            bin_uncertainties = sorted_uncertainties[start_idx:end_idx]
-            
-            if len(bin_errors) > 0:
-                # Check if average error matches average uncertainty
-                calibration_score = np.mean(bin_errors) / (np.mean(bin_uncertainties) + 1e-8)
-                calibration_scores.append(calibration_score)
-        
-        # Uncertainty sharpness (lower is better)
-        sharpness = np.mean(uncertainties)
-        
-        # Coverage at different confidence levels
-        coverage_90 = np.mean(errors <= 1.645 * uncertainties)
-        coverage_95 = np.mean(errors <= 1.96 * uncertainties)
-        coverage_99 = np.mean(errors <= 2.576 * uncertainties)
+        # Uncertainty correlation with error
+        if len(errors) > 1:
+            uncertainty_error_corr, _ = spearmanr(uncertainties, errors)
+        else:
+            uncertainty_error_corr = 0
         
         return {
-            'uncertainty_error_correlation': uncertainty_error_corr,
-            'uncertainty_calibration': np.mean(calibration_scores),
-            'uncertainty_sharpness': sharpness,
-            'coverage_90': coverage_90,
-            'coverage_95': coverage_95,
-            'coverage_99': coverage_99
+            'mean_uncertainty': float(uncertainties.mean()),
+            'std_uncertainty': float(uncertainties.std()),
+            'uncertainty_error_correlation': float(uncertainty_error_corr),
+            **mae_by_uncertainty
         }
     
-    def calculate_bootstrap_ci(
+    def _compute_survival_metrics(
         self,
         predictions: np.ndarray,
-        targets: np.ndarray,
-        metric_fn: callable,
-        n_bootstrap: int = 1000,
-        confidence_level: float = 0.95
+        chronological_ages: np.ndarray,
+        mortality_labels: np.ndarray
     ) -> Dict[str, float]:
+        """Compute survival analysis metrics."""
+        # Age acceleration
+        age_acceleration = predictions - chronological_ages
+        
+        # C-index for biological age
+        try:
+            c_index_bio = concordance_index(
+                mortality_labels,
+                -predictions,  # Negative because higher age -> higher risk
+                np.ones_like(mortality_labels)  # All observed
+            )
+        except:
+            c_index_bio = 0.5
+        
+        # C-index for chronological age
+        try:
+            c_index_chrono = concordance_index(
+                mortality_labels,
+                -chronological_ages,
+                np.ones_like(mortality_labels)
+            )
+        except:
+            c_index_chrono = 0.5
+        
+        # C-index for age acceleration
+        try:
+            c_index_accel = concordance_index(
+                mortality_labels,
+                -age_acceleration,
+                np.ones_like(mortality_labels)
+            )
+        except:
+            c_index_accel = 0.5
+        
+        # Hazard ratio analysis using Cox regression
+        try:
+            # Prepare data for Cox regression
+            cox_data = pd.DataFrame({
+                'duration': np.ones_like(mortality_labels) * 10,  # Assume 10-year follow-up
+                'event': mortality_labels,
+                'bio_age': predictions,
+                'chrono_age': chronological_ages,
+                'age_accel': age_acceleration
+            })
+            
+            # Fit Cox model
+            cph = CoxPHFitter()
+            cph.fit(cox_data[['duration', 'event', 'age_accel']], 
+                   duration_col='duration', event_col='event')
+            
+            # Get hazard ratio for 5-year age acceleration
+            hr_per_5_years = np.exp(cph.params_['age_accel'] * 5)
+        except:
+            hr_per_5_years = 1.0
+        
+        return {
+            'c_index': float(c_index_bio),
+            'c_index_chronological': float(c_index_chrono),
+            'c_index_acceleration': float(c_index_accel),
+            'hazard_ratio_per_5_years': float(hr_per_5_years),
+            'mortality_rate': float(mortality_labels.mean())
+        }
+    
+    def _compute_age_acceleration_metrics(
+        self,
+        predictions: np.ndarray,
+        targets: np.ndarray
+    ) -> Dict[str, float]:
+        """Compute age acceleration specific metrics."""
+        # Age acceleration
+        age_acceleration = predictions - targets
+        
+        # Categorize aging rates
+        accelerated = (age_acceleration > 5).mean() * 100
+        normal = ((age_acceleration >= -5) & (age_acceleration <= 5)).mean() * 100
+        decelerated = (age_acceleration < -5).mean() * 100
+        
+        # Distribution statistics
+        aa_mean = age_acceleration.mean()
+        aa_std = age_acceleration.std()
+        aa_median = np.median(age_acceleration)
+        aa_iqr = np.percentile(age_acceleration, 75) - np.percentile(age_acceleration, 25)
+        
+        return {
+            'age_acceleration_mean': float(aa_mean),
+            'age_acceleration_std': float(aa_std),
+            'age_acceleration_median': float(aa_median),
+            'age_acceleration_iqr': float(aa_iqr),
+            'percent_accelerated': float(accelerated),
+            'percent_normal': float(normal),
+            'percent_decelerated': float(decelerated)
+        }
+    
+    def evaluate_subgroups(
+        self,
+        dataloader: DataLoader,
+        subgroup_fn: callable
+    ) -> Dict[str, Dict[str, float]]:
         """
-        Calculate bootstrap confidence intervals for a metric.
+        Evaluate model performance on different subgroups.
         
         Args:
-            predictions: Predicted ages
-            targets: True ages
-            metric_fn: Function to calculate metric
-            n_bootstrap: Number of bootstrap samples
-            confidence_level: Confidence level for CI
+            dataloader: Test dataloader
+            subgroup_fn: Function to determine subgroup membership
         
         Returns:
-            Dictionary with metric value and CI
+            Dictionary of metrics per subgroup
         """
-        n_samples = len(predictions)
-        bootstrap_metrics = []
+        # Collect predictions and subgroup labels
+        predictions = []
+        targets = []
+        subgroups = []
+        
+        with torch.no_grad():
+            for inputs, batch_targets in tqdm(dataloader):
+                # Move to device
+                inputs = self._move_to_device(inputs)
+                batch_targets = batch_targets.to(self.device)
+                
+                # Get predictions
+                outputs = self.model(inputs)
+                batch_predictions = outputs['prediction'].squeeze()
+                
+                # Get subgroup labels
+                batch_subgroups = subgroup_fn(inputs, batch_targets)
+                
+                # Store results
+                predictions.append(batch_predictions.cpu().numpy())
+                targets.append(batch_targets.cpu().numpy())
+                subgroups.append(batch_subgroups)
+        
+        # Concatenate
+        predictions = np.concatenate(predictions)
+        targets = np.concatenate(targets).flatten()
+        subgroups = np.concatenate(subgroups)
+        
+        # Evaluate each subgroup
+        unique_subgroups = np.unique(subgroups)
+        results = {}
+        
+        for subgroup in unique_subgroups:
+            mask = subgroups == subgroup
+            subgroup_preds = predictions[mask]
+            subgroup_targets = targets[mask]
+            
+            if len(subgroup_preds) > 0:
+                results[str(subgroup)] = self._compute_regression_metrics(
+                    subgroup_preds, subgroup_targets
+                )
+                results[str(subgroup)]['n_samples'] = int(mask.sum())
+        
+        return results
+    
+    def compute_feature_importance(
+        self,
+        dataloader: DataLoader,
+        n_permutations: int = 10
+    ) -> Dict[str, np.ndarray]:
+        """
+        Compute feature importance using permutation.
+        
+        Args:
+            dataloader: Test dataloader
+            n_permutations: Number of permutations per feature
+        
+        Returns:
+            Dictionary of feature importance scores
+        """
+        # Get baseline performance
+        baseline_metrics = self.evaluate(dataloader, compute_survival=False)
+        baseline_mae = baseline_metrics['mae']
+        
+        # Get feature names (this would need to be implemented based on model type)
+        feature_names = self._get_feature_names()
+        
+        importance_scores = {}
+        
+        for feature_idx, feature_name in enumerate(feature_names):
+            mae_increases = []
+            
+            for _ in range(n_permutations):
+                # Create permuted dataloader
+                permuted_loader = self._create_permuted_loader(
+                    dataloader, feature_idx
+                )
+                
+                # Evaluate with permuted feature
+                permuted_metrics = self.evaluate(
+                    permuted_loader, compute_survival=False
+                )
+                
+                # Calculate importance as increase in error
+                mae_increase = permuted_metrics['mae'] - baseline_mae
+                mae_increases.append(mae_increase)
+            
+            importance_scores[feature_name] = np.mean(mae_increases)
+        
+        return importance_scores
+    
+    def _get_feature_names(self) -> List[str]:
+        """Get feature names based on model configuration."""
+        # This would be implemented based on the specific model and config
+        # For now, return generic names
+        if hasattr(self.config, 'henaw_config'):
+            return self.config.henaw_config.input_features
+        elif hasattr(self.config, 'modal_config'):
+            return self.config.modal_config.biomarker_features
+        elif hasattr(self.config, 'metage_config'):
+            return [f'metabolite_{i}' for i in range(168)]
+        else:
+            return []
+    
+    def _create_permuted_loader(
+        self,
+        dataloader: DataLoader,
+        feature_idx: int
+    ) -> DataLoader:
+        """Create a dataloader with one feature permuted."""
+        # This is a simplified implementation
+        # In practice, would need to handle the specific data structure
+        
+        class PermutedDataset:
+            def __init__(self, original_dataset, feature_idx):
+                self.dataset = original_dataset
+                self.feature_idx = feature_idx
+                self.permutation = np.random.permutation(len(self.dataset))
+            
+            def __len__(self):
+                return len(self.dataset)
+            
+            def __getitem__(self, idx):
+                inputs, targets = self.dataset[idx]
+                # Permute the specified feature
+                # This would need to be adapted based on input structure
+                return inputs, targets
+        
+        permuted_dataset = PermutedDataset(dataloader.dataset, feature_idx)
+        
+        return DataLoader(
+            permuted_dataset,
+            batch_size=dataloader.batch_size,
+            shuffle=False,
+            num_workers=0
+        )
+
+
+class ModelComparator:
+    """Compare multiple biological age models."""
+    
+    def __init__(self, models: Dict[str, nn.Module], config: Any, device: str = 'cuda'):
+        """
+        Initialize comparator.
+        
+        Args:
+            models: Dictionary of model_name -> model
+            config: Configuration object
+            device: Device for evaluation
+        """
+        self.models = models
+        self.config = config
+        self.device = device
+        
+        # Create evaluators for each model
+        self.evaluators = {
+            name: BioAgeEvaluator(model, config, device)
+            for name, model in models.items()
+        }
+    
+    def compare(self, dataloader: DataLoader) -> pd.DataFrame:
+        """
+        Compare all models on the same dataset.
+        
+        Args:
+            dataloader: Test dataloader
+        
+        Returns:
+            DataFrame with comparison results
+        """
+        results = {}
+        
+        for name, evaluator in self.evaluators.items():
+            logger.info(f"Evaluating {name}...")
+            metrics = evaluator.evaluate(dataloader)
+            results[name] = metrics
+        
+        # Convert to DataFrame for easy comparison
+        df = pd.DataFrame(results).T
+        
+        # Add ranking for each metric
+        for col in df.columns:
+            if col in ['mae', 'rmse', 'median_error', 'std_error']:
+                # Lower is better
+                df[f'{col}_rank'] = df[col].rank()
+            elif col in ['r2', 'pearson', 'spearman', 'c_index']:
+                # Higher is better
+                df[f'{col}_rank'] = df[col].rank(ascending=False)
+        
+        return df
+    
+    def statistical_comparison(
+        self,
+        dataloader: DataLoader,
+        n_bootstrap: int = 1000
+    ) -> Dict[str, Any]:
+        """
+        Perform statistical comparison between models using bootstrap.
+        
+        Args:
+            dataloader: Test dataloader
+            n_bootstrap: Number of bootstrap samples
+        
+        Returns:
+            Statistical comparison results
+        """
+        # Collect predictions from all models
+        all_predictions = {}
+        targets = None
+        
+        for name, model in self.models.items():
+            model.eval()
+            predictions = []
+            
+            with torch.no_grad():
+                for inputs, batch_targets in dataloader:
+                    if isinstance(inputs, dict):
+                        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+                    else:
+                        inputs = inputs.to(self.device)
+                    
+                    outputs = model(inputs)
+                    predictions.append(outputs['prediction'].squeeze().cpu().numpy())
+                    
+                    if targets is None:
+                        targets = []
+                    targets.append(batch_targets.numpy())
+            
+            all_predictions[name] = np.concatenate(predictions)
+        
+        targets = np.concatenate(targets).flatten()
+        
+        # Bootstrap comparison
+        n_samples = len(targets)
+        comparison_results = {}
         
         for _ in range(n_bootstrap):
             # Sample with replacement
             indices = np.random.choice(n_samples, n_samples, replace=True)
-            boot_preds = predictions[indices]
-            boot_targets = targets[indices]
             
-            # Calculate metric
-            metric_value = metric_fn(boot_targets, boot_preds)
-            bootstrap_metrics.append(metric_value)
+            # Compute metrics for each model
+            for name, preds in all_predictions.items():
+                bootstrap_preds = preds[indices]
+                bootstrap_targets = targets[indices]
+                
+                mae = mean_absolute_error(bootstrap_targets, bootstrap_preds)
+                
+                if name not in comparison_results:
+                    comparison_results[name] = {'mae': []}
+                comparison_results[name]['mae'].append(mae)
         
-        # Calculate percentile CI
-        alpha = 1 - confidence_level
-        lower_percentile = (alpha / 2) * 100
-        upper_percentile = (1 - alpha / 2) * 100
+        # Compute confidence intervals
+        final_results = {}
+        for name, metrics in comparison_results.items():
+            mae_values = np.array(metrics['mae'])
+            final_results[name] = {
+                'mae_mean': float(mae_values.mean()),
+                'mae_std': float(mae_values.std()),
+                'mae_ci_lower': float(np.percentile(mae_values, 2.5)),
+                'mae_ci_upper': float(np.percentile(mae_values, 97.5))
+            }
         
-        ci_lower = np.percentile(bootstrap_metrics, lower_percentile)
-        ci_upper = np.percentile(bootstrap_metrics, upper_percentile)
-        
-        # Original metric
-        original_metric = metric_fn(targets, predictions)
-        
-        return {
-            'metric': original_metric,
-            'ci_lower': ci_lower,
-            'ci_upper': ci_upper,
-            'std': np.std(bootstrap_metrics),
-            'confidence_level': confidence_level
-        }
-    
-    def comprehensive_evaluation(
-        self,
-        predictions: np.ndarray,
-        targets: np.ndarray,
-        chronological_age: Optional[np.ndarray] = None,
-        uncertainties: Optional[np.ndarray] = None,
-        groups: Optional[np.ndarray] = None,
-        event_times: Optional[np.ndarray] = None,
-        event_indicators: Optional[np.ndarray] = None
-    ) -> Dict[str, Any]:
-        """
-        Perform comprehensive evaluation.
-        
-        Args:
-            predictions: Predicted biological ages
-            targets: Target ages (usually chronological)
-            chronological_age: Chronological ages
-            uncertainties: Uncertainty estimates
-            groups: Group labels for subgroup analysis
-            event_times: Survival times
-            event_indicators: Event indicators
-        
-        Returns:
-            Comprehensive evaluation results
-        """
-        results = {}
-        
-        # Basic metrics
-        results['basic_metrics'] = self.calculate_basic_metrics(predictions, targets)
-        
-        # Age acceleration
-        if chronological_age is not None:
-            results['age_acceleration'] = self.calculate_age_acceleration(
-                predictions, chronological_age
-            )
-        
-        # Survival metrics
-        if event_times is not None and event_indicators is not None:
-            results['survival_metrics'] = self.calculate_survival_metrics(
-                predictions, event_times, event_indicators, chronological_age
-            )
-        
-        # Subgroup analysis
-        if groups is not None:
-            results['subgroup_metrics'] = self.calculate_subgroup_metrics(
-                predictions, targets, groups
-            )
-        
-        # Calibration
-        results['calibration'] = self.calculate_calibration_metrics(predictions, targets)
-        
-        # Uncertainty metrics
-        if uncertainties is not None:
-            results['uncertainty_metrics'] = self.calculate_uncertainty_metrics(
-                predictions, targets, uncertainties
-            )
-        
-        # Bootstrap CI for key metrics
-        results['mae_ci'] = self.calculate_bootstrap_ci(
-            predictions, targets, mean_absolute_error
-        )
-        
-        self.results = results
-        return results
-    
-    def print_summary(self, results: Optional[Dict] = None) -> None:
-        """Print summary of evaluation results."""
-        if results is None:
-            results = self.results
-        
-        print("\n" + "="*60)
-        print("BIOLOGICAL AGE EVALUATION SUMMARY")
-        print("="*60)
-        
-        # Basic metrics
-        if 'basic_metrics' in results:
-            print("\n📊 Basic Metrics:")
-            for metric, value in results['basic_metrics'].items():
-                if not metric.endswith('_p'):
-                    print(f"  {metric.upper()}: {value:.4f}")
-        
-        # Age acceleration
-        if 'age_acceleration' in results:
-            print("\n⏱️ Age Acceleration:")
-            aa = results['age_acceleration']
-            print(f"  Mean acceleration: {aa['age_acceleration_mean']:.2f} years")
-            print(f"  Std deviation: {aa['age_acceleration_std']:.2f} years")
-            print(f"  Accelerated aging proportion: {aa['accelerated_aging_proportion']:.1%}")
-        
-        # Survival metrics
-        if 'survival_metrics' in results:
-            print("\n💀 Survival Analysis:")
-            for metric, value in results['survival_metrics'].items():
-                if not np.isnan(value):
-                    print(f"  {metric}: {value:.4f}")
-        
-        # Calibration
-        if 'calibration' in results:
-            print("\n🎯 Calibration:")
-            print(f"  ECE: {results['calibration']['ece']:.4f}")
-            print(f"  MCE: {results['calibration']['mce']:.4f}")
-        
-        # Uncertainty
-        if 'uncertainty_metrics' in results:
-            print("\n❓ Uncertainty Quantification:")
-            um = results['uncertainty_metrics']
-            print(f"  Error-uncertainty correlation: {um['uncertainty_error_correlation']:.3f}")
-            print(f"  95% coverage: {um['coverage_95']:.1%}")
-        
-        print("\n" + "="*60)
+        return final_results

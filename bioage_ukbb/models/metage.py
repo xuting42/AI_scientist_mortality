@@ -1,19 +1,20 @@
 """
 METAGE (Metabolomic Trajectory Aging Estimator) implementation.
 
-Dynamic metabolic aging trajectory modeling using LSTM networks
+Dynamic metabolic aging trajectory modeling using NMR metabolomics data
 with personalized aging rate estimation and intervention response prediction.
 """
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Any, Union
 import numpy as np
 import math
+from torchdiffeq import odeint_adjoint as odeint
 
 
-class SinusoidalPositionalEncoding(nn.Module):
+class PositionalEncoding(nn.Module):
     """Sinusoidal positional encoding for temporal sequences."""
     
     def __init__(self, d_model: int, max_len: int = 5000):
@@ -23,7 +24,7 @@ class SinusoidalPositionalEncoding(nn.Module):
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
         
         div_term = torch.exp(torch.arange(0, d_model, 2).float() * 
-                           (-math.log(10000.0) / d_model))
+                           -(math.log(10000.0) / d_model))
         
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
@@ -31,112 +32,137 @@ class SinusoidalPositionalEncoding(nn.Module):
         self.register_buffer('pe', pe.unsqueeze(0))
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            x: Input tensor (batch, seq_len, d_model)
-        
-        Returns:
-            Tensor with positional encoding added
-        """
+        """Add positional encoding to input tensor."""
         return x + self.pe[:, :x.size(1)]
 
 
-class LearnablePositionalEncoding(nn.Module):
-    """Learnable positional encoding for temporal sequences."""
-    
-    def __init__(self, seq_len: int, d_model: int):
-        super().__init__()
-        self.pos_embedding = nn.Parameter(torch.randn(1, seq_len, d_model))
-    
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            x: Input tensor (batch, seq_len, d_model)
-        
-        Returns:
-            Tensor with positional encoding added
-        """
-        return x + self.pos_embedding
-
-
-class TemporalAttention(nn.Module):
-    """Temporal attention mechanism for sequence modeling."""
+class MetabolomicEncoder(nn.Module):
+    """Encoder for NMR metabolomic features."""
     
     def __init__(
         self,
-        hidden_dim: int,
-        n_heads: int = 8,
-        dropout: float = 0.1
+        n_metabolites: int,
+        hidden_dim: int = 256,
+        n_layers: int = 3,
+        dropout: float = 0.2
     ):
         super().__init__()
         
-        self.attention = nn.MultiheadAttention(
-            hidden_dim,
-            n_heads,
-            dropout=dropout,
-            batch_first=True
+        self.n_metabolites = n_metabolites
+        self.hidden_dim = hidden_dim
+        
+        # Metabolite group embeddings
+        self.metabolite_groups = {
+            'lipids': list(range(0, 40)),
+            'lipoproteins': list(range(40, 112)),
+            'fatty_acids': list(range(112, 140)),
+            'amino_acids': list(range(140, 149)),
+            'glycolysis': list(range(149, 155)),
+            'ketone_bodies': list(range(155, 158)),
+            'inflammation': list(range(158, 168))
+        }
+        
+        # Group-specific encoders
+        self.group_encoders = nn.ModuleDict({
+            group: nn.Sequential(
+                nn.Linear(len(indices), hidden_dim // 4),
+                nn.LayerNorm(hidden_dim // 4),
+                nn.GELU(),
+                nn.Dropout(dropout)
+            )
+            for group, indices in self.metabolite_groups.items()
+        })
+        
+        # Global encoder
+        self.global_encoder = nn.Sequential(
+            nn.Linear(n_metabolites, hidden_dim * 2),
+            nn.LayerNorm(hidden_dim * 2),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim * 2, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.GELU(),
+            nn.Dropout(dropout / 2)
         )
         
-        self.norm = nn.LayerNorm(hidden_dim)
-        self.dropout = nn.Dropout(dropout)
+        # Fusion layer
+        n_groups = len(self.metabolite_groups)
+        self.fusion = nn.Sequential(
+            nn.Linear(hidden_dim + (hidden_dim // 4) * n_groups, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.GELU()
+        )
     
-    def forward(
-        self,
-        x: torch.Tensor,
-        mask: Optional[torch.Tensor] = None
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
+        Encode metabolomic features.
+        
         Args:
-            x: Input sequences (batch, seq_len, hidden_dim)
-            mask: Attention mask
+            x: Metabolomic features (batch, n_metabolites) or (batch, seq_len, n_metabolites)
         
         Returns:
-            Tuple of (attended sequences, attention weights)
+            Encoded features
         """
-        attended, weights = self.attention(x, x, x, attn_mask=mask)
-        x = self.norm(x + self.dropout(attended))
-        
-        return x, weights
-
-
-class MetabolicLSTM(nn.Module):
-    """LSTM network for metabolomic sequence modeling."""
+        # Handle both 2D and 3D inputs
+        if x.dim() == 3:
+            batch_size, seq_len, _ = x.shape
+            x_flat = x.reshape(-1, self.n_metabolites)
+            encoded = self._encode_features(x_flat)
+            return encoded.reshape(batch_size, seq_len, -1)
+        else:
+            return self._encode_features(x)
     
-    def __init__(self, config: Any):
+    def _encode_features(self, x: torch.Tensor) -> torch.Tensor:
+        """Encode features with group-specific and global processing."""
+        # Global encoding
+        global_features = self.global_encoder(x)
+        
+        # Group-specific encoding
+        group_features = []
+        for group, indices in self.metabolite_groups.items():
+            if max(indices) < x.shape[1]:
+                group_data = x[:, indices]
+                group_encoded = self.group_encoders[group](group_data)
+                group_features.append(group_encoded)
+        
+        # Concatenate all features
+        if group_features:
+            all_features = torch.cat([global_features] + group_features, dim=-1)
+            return self.fusion(all_features)
+        else:
+            return global_features
+
+
+class TrajectoryLSTM(nn.Module):
+    """LSTM for modeling metabolic trajectories."""
+    
+    def __init__(
+        self,
+        input_dim: int,
+        hidden_dim: int = 256,
+        num_layers: int = 3,
+        dropout: float = 0.2,
+        bidirectional: bool = True
+    ):
         super().__init__()
         
-        self.config = config
-        input_dim = config.n_metabolomic_features
+        self.hidden_dim = hidden_dim
+        self.num_layers = num_layers
+        self.bidirectional = bidirectional
         
-        # Input projection
-        self.input_projection = nn.Linear(input_dim, config.lstm_hidden_dim)
-        
-        # LSTM layers
         self.lstm = nn.LSTM(
-            input_size=config.lstm_hidden_dim,
-            hidden_size=config.lstm_hidden_dim,
-            num_layers=config.lstm_num_layers,
+            input_dim,
+            hidden_dim,
+            num_layers,
             batch_first=True,
-            dropout=config.lstm_dropout if config.lstm_num_layers > 1 else 0,
-            bidirectional=config.lstm_bidirectional
+            dropout=dropout if num_layers > 1 else 0,
+            bidirectional=bidirectional
         )
         
-        # Output dimension adjustment for bidirectional
-        lstm_output_dim = config.lstm_hidden_dim * (2 if config.lstm_bidirectional else 1)
+        self.output_dim = hidden_dim * (2 if bidirectional else 1)
         
-        # Temporal attention
-        if config.use_attention:
-            self.attention = TemporalAttention(
-                lstm_output_dim,
-                config.attention_heads
-            )
-        else:
-            self.attention = None
-        
-        # Output projection
-        self.output_projection = nn.Linear(lstm_output_dim, config.lstm_hidden_dim)
-        
-        self.dropout = nn.Dropout(config.lstm_dropout)
+        # Layer normalization
+        self.layer_norm = nn.LayerNorm(self.output_dim)
     
     def forward(
         self,
@@ -144,55 +170,88 @@ class MetabolicLSTM(nn.Module):
         lengths: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
+        Process temporal sequences.
+        
         Args:
-            x: Input sequences (batch, seq_len, n_features)
-            lengths: Actual lengths of sequences
+            x: Input sequences (batch, seq_len, input_dim)
+            lengths: Actual sequence lengths for packing
         
         Returns:
-            Tuple of (sequence outputs, final hidden state)
+            Tuple of (output sequences, final hidden state)
         """
-        batch_size, seq_len, _ = x.shape
-        
-        # Project input
-        x = self.input_projection(x)
-        x = self.dropout(x)
-        
-        # Pack sequences if lengths provided
         if lengths is not None:
-            x = nn.utils.rnn.pack_padded_sequence(
+            # Pack padded sequences
+            packed = nn.utils.rnn.pack_padded_sequence(
                 x, lengths.cpu(), batch_first=True, enforce_sorted=False
             )
-        
-        # LSTM forward pass
-        lstm_out, (h_n, c_n) = self.lstm(x)
-        
-        # Unpack if packed
-        if lengths is not None:
-            lstm_out, _ = nn.utils.rnn.pad_packed_sequence(
-                lstm_out, batch_first=True, total_length=seq_len
+            output, (hidden, cell) = self.lstm(packed)
+            output, _ = nn.utils.rnn.pad_packed_sequence(
+                output, batch_first=True
             )
-        
-        # Apply attention if configured
-        if self.attention is not None:
-            lstm_out, attn_weights = self.attention(lstm_out)
         else:
-            attn_weights = None
+            output, (hidden, cell) = self.lstm(x)
         
-        # Project output
-        output = self.output_projection(lstm_out)
+        # Apply layer normalization
+        output = self.layer_norm(output)
         
         # Get final hidden state
-        if self.config.lstm_bidirectional:
-            # Concatenate forward and backward final states
-            h_n = torch.cat([h_n[-2], h_n[-1]], dim=-1)
+        if self.bidirectional:
+            # Concatenate forward and backward hidden states
+            hidden = torch.cat([hidden[-2], hidden[-1]], dim=-1)
         else:
-            h_n = h_n[-1]
+            hidden = hidden[-1]
         
-        return output, h_n
+        return output, hidden
 
 
-class AgingRateEstimator(nn.Module):
-    """Estimates personalized aging rate from metabolomic trajectories."""
+class NeuralODE(nn.Module):
+    """Neural ODE for continuous trajectory modeling."""
+    
+    def __init__(self, hidden_dim: int, n_layers: int = 3):
+        super().__init__()
+        
+        layers = []
+        for i in range(n_layers):
+            if i == 0:
+                layers.extend([
+                    nn.Linear(hidden_dim + 1, hidden_dim * 2),  # +1 for time
+                    nn.GELU(),
+                    nn.LayerNorm(hidden_dim * 2)
+                ])
+            elif i == n_layers - 1:
+                layers.append(nn.Linear(hidden_dim * 2, hidden_dim))
+            else:
+                layers.extend([
+                    nn.Linear(hidden_dim * 2, hidden_dim * 2),
+                    nn.GELU(),
+                    nn.LayerNorm(hidden_dim * 2)
+                ])
+        
+        self.net = nn.Sequential(*layers)
+    
+    def forward(self, t: torch.Tensor, state: torch.Tensor) -> torch.Tensor:
+        """
+        Compute derivative of state with respect to time.
+        
+        Args:
+            t: Time point
+            state: Current state
+        
+        Returns:
+            Derivative of state
+        """
+        # Expand time to match batch size
+        t_vec = t.expand(state.shape[0], 1)
+        
+        # Concatenate time with state
+        x = torch.cat([state, t_vec], dim=-1)
+        
+        # Compute derivative
+        return self.net(x)
+
+
+class AgingRatePredictor(nn.Module):
+    """Predict personalized aging rate from metabolic features."""
     
     def __init__(
         self,
@@ -206,37 +265,39 @@ class AgingRateEstimator(nn.Module):
         self.min_rate = min_rate
         self.max_rate = max_rate
         
-        self.estimator = nn.Sequential(
+        self.predictor = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
             nn.ReLU(),
             nn.BatchNorm1d(hidden_dim),
             nn.Dropout(0.2),
-            nn.Linear(hidden_dim, 64),
+            nn.Linear(hidden_dim, hidden_dim // 2),
             nn.ReLU(),
-            nn.BatchNorm1d(64),
-            nn.Linear(64, 1),
+            nn.BatchNorm1d(hidden_dim // 2),
+            nn.Linear(hidden_dim // 2, 1),
             nn.Sigmoid()  # Output in [0, 1]
         )
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
+        Predict aging rate.
+        
         Args:
-            x: Input features (batch, input_dim)
+            x: Input features
         
         Returns:
-            Aging rates scaled to [min_rate, max_rate]
+            Aging rate in [min_rate, max_rate]
         """
-        # Estimate rate in [0, 1]
-        rate_01 = self.estimator(x)
+        # Get rate in [0, 1]
+        normalized_rate = self.predictor(x)
         
         # Scale to [min_rate, max_rate]
-        aging_rate = self.min_rate + (self.max_rate - self.min_rate) * rate_01
+        aging_rate = self.min_rate + (self.max_rate - self.min_rate) * normalized_rate
         
         return aging_rate
 
 
-class InterventionPredictor(nn.Module):
-    """Predicts response to different interventions."""
+class InterventionResponsePredictor(nn.Module):
+    """Predict response to different interventions."""
     
     def __init__(
         self,
@@ -259,124 +320,44 @@ class InterventionPredictor(nn.Module):
         # Intervention-specific heads
         self.intervention_heads = nn.ModuleDict({
             intervention: nn.Sequential(
-                nn.Linear(hidden_dim, 64),
+                nn.Linear(hidden_dim, hidden_dim // 2),
                 nn.ReLU(),
-                nn.Linear(64, 1)
+                nn.Linear(hidden_dim // 2, 2)  # Response magnitude and confidence
             )
             for intervention in intervention_types
         })
     
     def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
         """
+        Predict intervention responses.
+        
         Args:
-            x: Input features (batch, input_dim)
+            x: Input features
         
         Returns:
-            Dictionary of intervention response predictions
+            Dictionary of intervention responses
         """
+        # Extract shared features
         features = self.feature_extractor(x)
         
+        # Predict response for each intervention
         responses = {}
         for intervention, head in self.intervention_heads.items():
-            responses[intervention] = head(features)
+            response = head(features)
+            responses[intervention] = {
+                'magnitude': torch.tanh(response[:, 0:1]),  # [-1, 1]
+                'confidence': torch.sigmoid(response[:, 1:2])  # [0, 1]
+            }
         
         return responses
-
-
-class VariationalEncoder(nn.Module):
-    """Variational encoder for metabolomic sequences."""
-    
-    def __init__(
-        self,
-        input_dim: int,
-        latent_dim: int = 64
-    ):
-        super().__init__()
-        
-        self.encoder = nn.Sequential(
-            nn.Linear(input_dim, 256),
-            nn.ReLU(),
-            nn.BatchNorm1d(256),
-            nn.Linear(256, 128),
-            nn.ReLU()
-        )
-        
-        self.mu_head = nn.Linear(128, latent_dim)
-        self.logvar_head = nn.Linear(128, latent_dim)
-    
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """
-        Args:
-            x: Input features (batch, input_dim)
-        
-        Returns:
-            Tuple of (latent code, mu, log_variance)
-        """
-        encoded = self.encoder(x)
-        
-        mu = self.mu_head(encoded)
-        logvar = self.logvar_head(encoded)
-        
-        # Reparameterization trick
-        std = torch.exp(0.5 * logvar)
-        eps = torch.randn_like(std)
-        z = mu + eps * std
-        
-        return z, mu, logvar
-
-
-class TrajectoryProjector(nn.Module):
-    """Projects metabolomic trajectories into future timepoints."""
-    
-    def __init__(
-        self,
-        input_dim: int,
-        hidden_dim: int = 256,
-        n_future_steps: int = 3
-    ):
-        super().__init__()
-        
-        self.n_future_steps = n_future_steps
-        
-        self.projector = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.ReLU(),
-            nn.BatchNorm1d(hidden_dim),
-            nn.Dropout(0.2),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.BatchNorm1d(hidden_dim)
-        )
-        
-        # Generate future steps
-        self.future_heads = nn.ModuleList([
-            nn.Linear(hidden_dim, input_dim)
-            for _ in range(n_future_steps)
-        ])
-    
-    def forward(self, x: torch.Tensor) -> List[torch.Tensor]:
-        """
-        Args:
-            x: Current state (batch, input_dim)
-        
-        Returns:
-            List of future state predictions
-        """
-        features = self.projector(x)
-        
-        future_states = []
-        for head in self.future_heads:
-            future_states.append(head(features))
-        
-        return future_states
 
 
 class METAGE(nn.Module):
     """
     Metabolomic Trajectory Aging Estimator.
     
-    Models dynamic metabolic aging trajectories using LSTM networks
-    with personalized aging rate estimation and intervention prediction.
+    Models dynamic metabolic aging trajectories with personalized aging rates
+    and intervention response prediction using NMR metabolomics data.
     """
     
     def __init__(self, config: Any):
@@ -389,63 +370,99 @@ class METAGE(nn.Module):
         super().__init__()
         self.config = config
         
-        # Positional encoding
-        if config.time_encoding == "sinusoidal":
-            self.positional_encoding = SinusoidalPositionalEncoding(
-                config.n_metabolomic_features
-            )
-        elif config.time_encoding == "learnable":
-            self.positional_encoding = LearnablePositionalEncoding(
-                config.sequence_length,
-                config.n_metabolomic_features
-            )
-        else:
-            self.positional_encoding = None
-        
-        # Metabolomic feature groups
-        self.feature_groups = self._create_feature_groups()
-        
-        # LSTM for sequence modeling
-        self.metabolic_lstm = MetabolicLSTM(config)
-        
-        # Variational encoding if configured
-        if config.use_variational:
-            self.variational_encoder = VariationalEncoder(
-                config.lstm_hidden_dim,
-                latent_dim=64
-            )
-        else:
-            self.variational_encoder = None
-        
-        # Trajectory projector
-        self.trajectory_projector = TrajectoryProjector(
-            config.lstm_hidden_dim,
-            hidden_dim=256,
-            n_future_steps=3
+        # Metabolomic encoder
+        self.metabolomic_encoder = MetabolomicEncoder(
+            n_metabolites=config.n_metabolomic_features,
+            hidden_dim=config.lstm_hidden_dim,
+            dropout=config.lstm_dropout
         )
         
-        # Aging rate estimator
+        # Temporal modeling
+        if config.sequence_length > 1:
+            # Positional encoding for sequences
+            if config.time_encoding == "sinusoidal":
+                self.positional_encoding = PositionalEncoding(
+                    config.lstm_hidden_dim,
+                    max_len=config.sequence_length
+                )
+            else:
+                self.positional_encoding = None
+            
+            # LSTM for trajectory modeling
+            self.trajectory_lstm = TrajectoryLSTM(
+                input_dim=config.lstm_hidden_dim,
+                hidden_dim=config.lstm_hidden_dim,
+                num_layers=config.lstm_num_layers,
+                dropout=config.lstm_dropout,
+                bidirectional=config.lstm_bidirectional
+            )
+            
+            lstm_output_dim = self.trajectory_lstm.output_dim
+        else:
+            self.positional_encoding = None
+            self.trajectory_lstm = None
+            lstm_output_dim = config.lstm_hidden_dim
+        
+        # Neural ODE for continuous trajectories
+        if config.use_ode_solver:
+            self.neural_ode = NeuralODE(lstm_output_dim)
+            self.ode_solver = config.ode_solver
+            self.ode_rtol = config.ode_rtol
+            self.ode_atol = config.ode_atol
+        else:
+            self.neural_ode = None
+        
+        # Attention mechanism
+        if config.use_attention:
+            if config.attention_type == "self":
+                self.attention = nn.MultiheadAttention(
+                    lstm_output_dim,
+                    config.attention_heads,
+                    dropout=0.1,
+                    batch_first=True
+                )
+            else:
+                self.attention = None
+        else:
+            self.attention = None
+        
+        # Aging rate predictor
         if config.estimate_aging_rate:
-            self.aging_rate_estimator = AgingRateEstimator(
-                config.lstm_hidden_dim,
+            self.aging_rate_predictor = AgingRatePredictor(
+                input_dim=lstm_output_dim,
                 min_rate=config.aging_rate_min,
                 max_rate=config.aging_rate_max
             )
         else:
-            self.aging_rate_estimator = None
+            self.aging_rate_predictor = None
         
-        # Intervention predictor
+        # Intervention response predictor
         if config.predict_intervention_response:
-            self.intervention_predictor = InterventionPredictor(
-                config.lstm_hidden_dim,
-                config.intervention_types
+            self.intervention_predictor = InterventionResponsePredictor(
+                input_dim=lstm_output_dim,
+                intervention_types=config.intervention_types
             )
         else:
             self.intervention_predictor = None
         
-        # Age prediction network
-        self.age_predictor = nn.Sequential(
-            nn.Linear(config.lstm_hidden_dim, 256),
+        # Variational components for uncertainty
+        if config.use_variational:
+            self.variational_encoder = nn.Sequential(
+                nn.Linear(lstm_output_dim, lstm_output_dim // 2),
+                nn.ReLU()
+            )
+            self.mu_head = nn.Linear(lstm_output_dim // 2, lstm_output_dim // 4)
+            self.logvar_head = nn.Linear(lstm_output_dim // 2, lstm_output_dim // 4)
+        else:
+            self.variational_encoder = None
+        
+        # Final prediction network
+        final_input_dim = lstm_output_dim
+        if config.use_variational:
+            final_input_dim = lstm_output_dim + lstm_output_dim // 4
+        
+        self.prediction_network = nn.Sequential(
+            nn.Linear(final_input_dim, 256),
             nn.ReLU(),
             nn.BatchNorm1d(256),
             nn.Dropout(0.3),
@@ -454,221 +471,235 @@ class METAGE(nn.Module):
             nn.BatchNorm1d(128),
             nn.Dropout(0.2),
             nn.Linear(128, 64),
-            nn.ReLU(),
-            nn.Linear(64, 1)
+            nn.ReLU()
         )
         
-        # Initialize weights
-        self._initialize_weights()
-    
-    def _initialize_weights(self):
-        """Initialize model weights."""
-        for module in self.modules():
-            if isinstance(module, nn.Linear):
-                nn.init.xavier_uniform_(module.weight)
-                if module.bias is not None:
-                    nn.init.zeros_(module.bias)
-            elif isinstance(module, nn.LSTM):
-                for name, param in module.named_parameters():
-                    if 'weight' in name:
-                        nn.init.xavier_uniform_(param)
-                    elif 'bias' in name:
-                        nn.init.zeros_(param)
-    
-    def _create_feature_groups(self) -> Dict[str, List[int]]:
-        """Create metabolomic feature groups."""
-        # Placeholder for feature grouping
-        # In practice, this would map actual metabolite indices to groups
-        groups = {}
-        features_per_group = self.config.n_metabolomic_features // len(self.config.metabolomic_groups)
+        # Age prediction head
+        self.age_head = nn.Linear(64, 1)
         
-        start_idx = 0
-        for group in self.config.metabolomic_groups:
-            end_idx = start_idx + features_per_group
-            groups[group] = list(range(start_idx, min(end_idx, self.config.n_metabolomic_features)))
-            start_idx = end_idx
-        
-        return groups
+        # Trajectory projection head
+        self.trajectory_head = nn.Sequential(
+            nn.Linear(64, 32),
+            nn.ReLU(),
+            nn.Linear(32, 1)
+        )
     
-    def extract_group_features(
+    def reparameterize(self, mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
+        """Reparameterization trick for variational inference."""
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return mu + eps * std
+    
+    def compute_trajectory(
         self,
-        x: torch.Tensor
-    ) -> Dict[str, torch.Tensor]:
+        initial_state: torch.Tensor,
+        time_points: torch.Tensor
+    ) -> torch.Tensor:
         """
-        Extract features for each metabolomic group.
+        Compute continuous trajectory using Neural ODE.
         
         Args:
-            x: Input sequences (batch, seq_len, n_features)
+            initial_state: Initial metabolic state
+            time_points: Time points to evaluate
         
         Returns:
-            Dictionary of group features
+            Trajectory values at time points
         """
-        group_features = {}
+        if self.neural_ode is None:
+            return initial_state.unsqueeze(1).expand(-1, len(time_points), -1)
         
-        for group_name, indices in self.feature_groups.items():
-            group_features[group_name] = x[:, :, indices].mean(dim=-1, keepdim=True)
+        # Solve ODE
+        trajectory = odeint(
+            self.neural_ode,
+            initial_state,
+            time_points,
+            method=self.ode_solver,
+            rtol=self.ode_rtol,
+            atol=self.ode_atol
+        )
         
-        return group_features
+        # Reshape: (time, batch, features) -> (batch, time, features)
+        return trajectory.permute(1, 0, 2)
     
     def forward(
         self,
         inputs: Dict[str, torch.Tensor],
-        return_trajectories: bool = False
-    ) -> Dict[str, Any]:
+        return_trajectories: bool = False,
+        return_rates: bool = False
+    ) -> Dict[str, torch.Tensor]:
         """
         Forward pass through METAGE.
         
         Args:
             inputs: Dictionary containing:
-                - 'sequence': Metabolomic sequences (batch, seq_len, n_features)
-                - 'time_encoding': Optional time encodings
-                - 'lengths': Optional sequence lengths
-            return_trajectories: Whether to return future trajectory predictions
+                - 'metabolomics': NMR metabolomic features (batch, seq_len, n_features)
+                  or (batch, n_features) for single timepoint
+                - 'time_points': Optional time points for each sequence element
+                - 'lengths': Optional actual sequence lengths
+            return_trajectories: Whether to return trajectory predictions
+            return_rates: Whether to return aging rate predictions
         
         Returns:
             Dictionary containing predictions and optional outputs
         """
-        sequence = inputs['sequence']
-        batch_size, seq_len, n_features = sequence.shape
+        metabolomics = inputs['metabolomics']
         
-        # Add positional encoding if configured
-        if self.positional_encoding is not None:
-            sequence = self.positional_encoding(sequence)
-        elif 'time_encoding' in inputs:
-            # Add provided time encoding
-            sequence = sequence + inputs['time_encoding']
+        # Encode metabolomic features
+        encoded = self.metabolomic_encoder(metabolomics)
         
-        # Extract group features for interpretability
-        group_features = self.extract_group_features(sequence)
-        
-        # Process through LSTM
-        lstm_output, final_hidden = self.metabolic_lstm(
-            sequence,
-            inputs.get('lengths', None)
-        )
-        
-        # Use final hidden state for predictions
-        features = final_hidden
-        
-        # Variational encoding if configured
-        if self.variational_encoder is not None:
-            z, mu, logvar = self.variational_encoder(features)
-            features = z
-            kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=-1).mean()
+        # Handle temporal sequences
+        if metabolomics.dim() == 3 and self.trajectory_lstm is not None:
+            batch_size, seq_len, _ = encoded.shape
+            
+            # Add positional encoding if available
+            if self.positional_encoding is not None:
+                encoded = self.positional_encoding(encoded)
+            
+            # Process with LSTM
+            lengths = inputs.get('lengths', None)
+            lstm_output, final_hidden = self.trajectory_lstm(encoded, lengths)
+            
+            # Apply attention if configured
+            if self.attention is not None:
+                attended, _ = self.attention(lstm_output, lstm_output, lstm_output)
+                # Use attended final state
+                features = attended[:, -1, :]
+            else:
+                # Use final hidden state
+                features = final_hidden
         else:
-            kl_loss = None
+            # Single timepoint - use encoded features directly
+            features = encoded.squeeze(1) if encoded.dim() == 3 else encoded
         
-        # Age prediction
-        age_prediction = self.age_predictor(features)
+        # Variational encoding for uncertainty
+        kl_loss = None
+        if self.variational_encoder is not None:
+            var_features = self.variational_encoder(features)
+            mu = self.mu_head(var_features)
+            logvar = self.logvar_head(var_features)
+            z = self.reparameterize(mu, logvar)
+            
+            # KL divergence loss
+            kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=-1).mean()
+            
+            # Concatenate with original features
+            features = torch.cat([features, z], dim=-1)
+        
+        # Pass through prediction network
+        pred_features = self.prediction_network(features)
+        
+        # Main age prediction
+        age_prediction = self.age_head(pred_features)
         
         outputs = {
             'prediction': age_prediction,
-            'features': features,
-            'sequence_output': lstm_output,
-            'group_features': group_features
+            'features': pred_features
         }
         
-        # Add KL loss if using variational
+        # Add KL loss if computed
         if kl_loss is not None:
             outputs['kl_loss'] = kl_loss
         
-        # Estimate aging rate
-        if self.aging_rate_estimator is not None:
-            aging_rate = self.aging_rate_estimator(features)
+        # Predict aging rate
+        if return_rates and self.aging_rate_predictor is not None:
+            aging_rate = self.aging_rate_predictor(features)
             outputs['aging_rate'] = aging_rate
             
-            # Adjust prediction by aging rate
-            outputs['adjusted_prediction'] = age_prediction * aging_rate
+            # Adjust prediction based on aging rate
+            adjusted_prediction = age_prediction * aging_rate
+            outputs['adjusted_prediction'] = adjusted_prediction
+        
+        # Compute trajectories
+        if return_trajectories:
+            # Project future trajectory
+            trajectory_projection = self.trajectory_head(pred_features)
+            outputs['trajectory_projection'] = trajectory_projection
+            
+            # If using Neural ODE, compute continuous trajectory
+            if self.neural_ode is not None and 'time_points' in inputs:
+                time_points = inputs['time_points']
+                trajectory = self.compute_trajectory(features, time_points)
+                outputs['continuous_trajectory'] = trajectory
         
         # Predict intervention responses
         if self.intervention_predictor is not None:
             intervention_responses = self.intervention_predictor(features)
             outputs['intervention_responses'] = intervention_responses
         
-        # Project future trajectories
-        if return_trajectories:
-            future_states = self.trajectory_projector(features)
-            outputs['future_trajectories'] = future_states
-        
         return outputs
     
-    def compute_trajectory_loss(
+    def predict_future_age(
         self,
-        predicted_trajectories: List[torch.Tensor],
-        true_future_sequences: torch.Tensor
+        current_features: torch.Tensor,
+        years_ahead: float,
+        aging_rate: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
-        Compute loss for trajectory predictions.
+        Predict biological age at a future time point.
         
         Args:
-            predicted_trajectories: List of predicted future states
-            true_future_sequences: True future sequences (batch, n_future, n_features)
+            current_features: Current metabolomic features
+            years_ahead: Number of years to project
+            aging_rate: Optional personalized aging rate
         
         Returns:
-            Trajectory prediction loss
+            Predicted biological age
         """
-        losses = []
+        # Encode features
+        encoded = self.metabolomic_encoder(current_features)
         
-        for i, pred in enumerate(predicted_trajectories):
-            if i < true_future_sequences.size(1):
-                true_state = true_future_sequences[:, i, :]
-                loss = F.mse_loss(pred, true_state)
-                losses.append(loss)
+        # Get aging rate if not provided
+        if aging_rate is None and self.aging_rate_predictor is not None:
+            aging_rate = self.aging_rate_predictor(encoded)
+        elif aging_rate is None:
+            aging_rate = torch.ones(current_features.shape[0], 1, device=current_features.device)
         
-        return torch.stack(losses).mean() if losses else torch.tensor(0.0)
+        # Pass through prediction network
+        pred_features = self.prediction_network(encoded)
+        
+        # Get current age
+        current_age = self.age_head(pred_features)
+        
+        # Project future age based on aging rate
+        future_age = current_age + years_ahead * aging_rate
+        
+        return future_age
     
-    def interpret_metabolic_profile(
+    def recommend_interventions(
         self,
-        group_features: Dict[str, torch.Tensor]
-    ) -> Dict[str, str]:
+        features: torch.Tensor,
+        threshold: float = 0.5
+    ) -> Dict[str, List[str]]:
         """
-        Interpret metabolomic group features.
+        Recommend interventions based on predicted responses.
         
         Args:
-            group_features: Dictionary of group features
+            features: Metabolomic features
+            threshold: Confidence threshold for recommendations
         
         Returns:
-            Dictionary of interpretations
+            Dictionary of recommendations per sample
         """
-        interpretations = {}
+        if self.intervention_predictor is None:
+            return {}
         
-        for group_name, features in group_features.items():
-            # Get mean value across sequence
-            mean_value = features.mean().item()
+        # Encode features
+        encoded = self.metabolomic_encoder(features)
+        
+        # Get intervention responses
+        responses = self.intervention_predictor(encoded)
+        
+        # Generate recommendations
+        batch_size = features.shape[0]
+        recommendations = {i: [] for i in range(batch_size)}
+        
+        for intervention, response_dict in responses.items():
+            magnitude = response_dict['magnitude']
+            confidence = response_dict['confidence']
             
-            # Simple interpretation based on deviation from normal
-            if mean_value > 1.5:
-                status = "elevated"
-            elif mean_value < -1.5:
-                status = "reduced"
-            else:
-                status = "normal"
-            
-            interpretations[group_name] = f"{group_name}: {status} (mean: {mean_value:.2f})"
+            for i in range(batch_size):
+                # Recommend if high confidence and negative magnitude (age reduction)
+                if confidence[i] > threshold and magnitude[i] < 0:
+                    recommendations[i].append(intervention)
         
-        return interpretations
-    
-    def predict_optimal_intervention(
-        self,
-        intervention_responses: Dict[str, torch.Tensor]
-    ) -> Tuple[str, float]:
-        """
-        Determine optimal intervention based on predicted responses.
-        
-        Args:
-            intervention_responses: Dictionary of intervention predictions
-        
-        Returns:
-            Tuple of (best intervention, expected improvement)
-        """
-        best_intervention = None
-        best_improvement = float('-inf')
-        
-        for intervention, response in intervention_responses.items():
-            improvement = -response.mean().item()  # Negative for age reduction
-            
-            if improvement > best_improvement:
-                best_improvement = improvement
-                best_intervention = intervention
-        
-        return best_intervention, best_improvement
+        return recommendations
