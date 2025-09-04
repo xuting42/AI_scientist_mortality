@@ -1,0 +1,198 @@
+# Example configuration for UK Biobank biological age algorithms
+
+data:
+  ukbb_data_path: /mnt/data1/UKBB
+  retinal_img_path: /mnt/data1/UKBB_retinal_img/UKB_new_2024
+  output_dir: ./outputs
+  cache_dir: ./cache
+  batch_size: 256
+  num_workers: 8
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 2
+  train_ratio: 0.7
+  val_ratio: 0.15
+  test_ratio: 0.15
+  stratify_by_age: true
+  normalize_features: true
+  imputation_strategy: median
+  handle_outliers: true
+  outlier_threshold: 5.0
+
+henaw:
+  input_features:
+    - albumin
+    - alkaline_phosphatase
+    - creatinine
+    - c_reactive_protein
+    - glucose
+    - red_cell_distribution_width
+    - white_blood_cell_count
+    - systolic_blood_pressure
+    - diastolic_blood_pressure
+    - bmi
+  rapid_window: [0, 2]
+  intermediate_window: [2, 5]
+  slow_window: [5, 10]
+  use_ridge: true
+  use_random_forest: true
+  use_xgboost: true
+  ridge_alpha: 1.0
+  ridge_max_iter: 1000
+  rf_n_estimators: 100
+  rf_max_depth: 10
+  rf_min_samples_split: 5
+  rf_min_samples_leaf: 2
+  xgb_n_estimators: 100
+  xgb_max_depth: 6
+  xgb_learning_rate: 0.1
+  xgb_subsample: 0.8
+  xgb_colsample_bytree: 0.8
+  attention_dim: 128
+  attention_heads: 8
+  attention_dropout: 0.1
+  use_monte_carlo_dropout: true
+  mc_dropout_rate: 0.2
+  mc_n_samples: 100
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  scheduler: cosine
+  warmup_epochs: 5
+
+modal:
+  use_oct_imaging: true
+  use_blood_biomarkers: true
+  oct_image_size: [224, 224]
+  oct_normalization: imagenet
+  oct_augmentation: true
+  vit_patch_size: 16
+  vit_embed_dim: 768
+  vit_depth: 12
+  vit_num_heads: 12
+  vit_mlp_ratio: 4.0
+  vit_dropout: 0.1
+  vit_attention_dropout: 0.1
+  pretrained_vit: true
+  vit_checkpoint: vit_base_patch16_224
+  biomarker_features:
+    - hemoglobin
+    - hematocrit
+    - red_blood_cell_count
+    - white_blood_cell_count
+    - platelet_count
+    - albumin
+    - creatinine
+    - c_reactive_protein
+    - glucose
+    - hdl_cholesterol
+    - ldl_cholesterol
+    - triglycerides
+  mlp_hidden_dims: [512, 256, 128]
+  mlp_dropout: 0.2
+  mlp_activation: gelu
+  use_contrastive_learning: true
+  contrastive_temperature: 0.07
+  contrastive_projection_dim: 128
+  fusion_method: cross_attention
+  fusion_dim: 256
+  fusion_heads: 8
+  fusion_dropout: 0.1
+  compute_subscores: true
+  organ_systems:
+    - cardiovascular
+    - metabolic
+    - hepatic
+    - renal
+    - hematologic
+    - inflammatory
+  learning_rate: 0.0001
+  weight_decay: 0.00001
+  scheduler: cosine
+  warmup_steps: 1000
+  max_epochs: 100
+
+metage:
+  n_metabolomic_features: 250
+  metabolomic_groups:
+    - lipids
+    - lipoproteins
+    - fatty_acids
+    - amino_acids
+    - glycolysis
+    - ketone_bodies
+    - inflammation
+    - fluid_balance
+  lstm_hidden_dim: 256
+  lstm_num_layers: 3
+  lstm_dropout: 0.2
+  lstm_bidirectional: true
+  sequence_length: 5
+  time_encoding: sinusoidal
+  use_ode_solver: false
+  estimate_aging_rate: true
+  aging_rate_min: 0.5
+  aging_rate_max: 2.0
+  predict_intervention_response: true
+  intervention_types:
+    - exercise
+    - diet
+    - medication
+    - lifestyle
+  use_attention: true
+  attention_type: self
+  attention_dim: 128
+  attention_heads: 8
+  use_variational: true
+  kl_weight: 0.001
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  gradient_clip_val: 1.0
+  scheduler: plateau
+
+training:
+  max_epochs: 100
+  early_stopping_patience: 10
+  early_stopping_min_delta: 0.0001
+  gradient_accumulation_steps: 1
+  optimizer: adamw
+  scheduler: cosine
+  use_amp: true
+  amp_backend: native
+  use_ddp: false
+  ddp_backend: nccl
+  num_nodes: 1
+  gpus_per_node: 1
+  save_checkpoints: true
+  checkpoint_dir: ./checkpoints
+  save_top_k: 3
+  checkpoint_metric: val_loss
+  checkpoint_mode: min
+  use_wandb: true
+  wandb_project: ukbb-biological-age
+  use_tensorboard: true
+  tensorboard_dir: ./tensorboard
+  log_every_n_steps: 10
+  seed: 42
+  deterministic: true
+  benchmark: false
+  num_sanity_val_steps: 2
+  use_cross_validation: true
+  n_folds: 5
+  stratified: true
+
+inference:
+  checkpoint_path: ./checkpoints/best_model.ckpt
+  device: cuda
+  batch_size: 512
+  num_workers: 4
+  use_cache: true
+  cache_ttl: 3600
+  api_host: 0.0.0.0
+  api_port: 8000
+  api_workers: 4
+  max_request_size: 100
+  enable_monitoring: true
+  prometheus_port: 9090
+  output_format: json
+  include_uncertainty: true
+  include_subscores: true
