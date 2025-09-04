@@ -1,0 +1,489 @@
+{
+  "data_availability": {
+    "blood_biomarkers": {
+      "blood_biomarkers": {
+        "Albumin": [
+          "Albumin"
+        ],
+        "Glucose": [
+          "Glucose"
+        ],
+        "Alkaline phosphatase": [
+          "Alkaline_phosphatase"
+        ],
+        "Urea": [
+          "Urea"
+        ],
+        "IGF-1": [
+          "IGF_1"
+        ],
+        "Cholesterol": [
+          "Cholesterol",
+          "HDL_cholesterol"
+        ],
+        "HDL": [
+          "HDL_cholesterol"
+        ],
+        "LDL": [
+          "LDL_direct"
+        ],
+        "Triglycerides": [
+          "Triglycerides"
+        ],
+        "HbA1c": [
+          "Glycated_haemoglobin_HbA1c"
+        ],
+        "Creatinine": [
+          "Creatinine"
+        ],
+        "Bilirubin": [
+          "Direct_bilirubin",
+          "Total_bilirubin"
+        ],
+        "AST": [
+          "Fasting_time"
+        ]
+      },
+      "nmr_biomarkers": {
+        "Albumin": [
+          "Albumin"
+        ],
+        "Glucose": [
+          "Low_Glucose.0",
+          "Glucose"
+        ],
+        "Cholesterol": [
+          "Total_Cholesterol",
+          "Total_Cholesterol_Minus_HDL_C",
+          "Remnant_Cholesterol_Non_HDL__Non_LDL__Cholesterol",
+          "VLDL_Cholesterol",
+          "Clinical_LDL_Cholesterol",
+          "LDL_Cholesterol",
+          "HDL_Cholesterol",
+          "Total_Esterified_Cholesterol",
+          "Total_Free_Cholesterol",
+          "Free_Cholesterol_in_VLDL",
+          "Free_Cholesterol_in_LDL",
+          "Free_Cholesterol_in_HDL",
+          "Cholesterol_in_Chylomicrons_and_Extremely_Large_VLDL",
+          "Free_Cholesterol_in_Chylomicrons_and_Extremely_Large_VLDL",
+          "Cholesterol_in_Very_Large_VLDL",
+          "Free_Cholesterol_in_Very_Large_VLDL",
+          "Cholesterol_in_Large_VLDL",
+          "Free_Cholesterol_in_Large_VLDL",
+          "Cholesterol_in_Medium_VLDL",
+          "Free_Cholesterol_in_Medium_VLDL",
+          "Cholesterol_in_Small_VLDL",
+          "Free_Cholesterol_in_Small_VLDL",
+          "Cholesterol_in_Very_Small_VLDL",
+          "Free_Cholesterol_in_Very_Small_VLDL",
+          "Cholesterol_in_IDL",
+          "Free_Cholesterol_in_IDL",
+          "Cholesterol_in_Large_LDL",
+          "Free_Cholesterol_in_Large_LDL",
+          "Cholesterol_in_Medium_LDL",
+          "Free_Cholesterol_in_Medium_LDL",
+          "Cholesterol_in_Small_LDL",
+          "Free_Cholesterol_in_Small_LDL",
+          "Cholesterol_in_Very_Large_HDL",
+          "Free_Cholesterol_in_Very_Large_HDL",
+          "Cholesterol_in_Large_HDL",
+          "Free_Cholesterol_in_Large_HDL",
+          "Cholesterol_in_Medium_HDL",
+          "Free_Cholesterol_in_Medium_HDL",
+          "Cholesterol_in_Small_HDL",
+          "Free_Cholesterol_in_Small_HDL",
+          "Cholesterol_to_Total_Lipids_in_Chylomicrons_and_Extremely_Large_VLDL_percentage",
+          "Free_Cholesterol_to_Total_Lipids_in_Chylomicrons_and_Extremely_Large_VLDL_percentage",
+          "Cholesterol_to_Total_Lipids_in_Very_Large_VLDL_percentage",
+          "Free_Cholesterol_to_Total_Lipids_in_Very_Large_VLDL_percentage",
+          "Cholesterol_to_Total_Lipids_in_Large_VLDL_percentage",
+          "Free_Cholesterol_to_Total_Lipids_in_Large_VLDL_percentage",
+          "Cholesterol_to_Total_Lipids_in_Medium_VLDL_percentage",
+          "Free_Cholesterol_to_Total_Lipids_in_Medium_VLDL_percentage",
+          "Cholesterol_to_Total_Lipids_in_Small_VLDL_percentage",
+          "Free_Cholesterol_to_Total_Lipids_in_Small_VLDL_percentage",
+          "Cholesterol_to_Total_Lipids_in_Very_Small_VLDL_percentage",
+          "Free_Cholesterol_to_Total_Lipids_in_Very_Small_VLDL_percentage",
+          "Cholesterol_to_Total_Lipids_in_IDL_percentage",
+          "Free_Cholesterol_to_Total_Lipids_in_IDL_percentage",
+          "Cholesterol_to_Total_Lipids_in_Large_LDL_percentage",
+          "Free_Cholesterol_to_Total_Lipids_in_Large_LDL_percentage",
+          "Cholesterol_to_Total_Lipids_in_Medium_LDL_percentage",
+          "Free_Cholesterol_to_Total_Lipids_in_Medium_LDL_percentage",
+          "Cholesterol_to_Total_Lipids_in_Small_LDL_percentage",
+          "Free_Cholesterol_to_Total_Lipids_in_Small_LDL_percentage",
+          "Cholesterol_to_Total_Lipids_in_Very_Large_HDL_percentage",
+          "Free_Cholesterol_to_Total_Lipids_in_Very_Large_HDL_percentage",
+          "Cholesterol_to_Total_Lipids_in_Large_HDL_percentage",
+          "Free_Cholesterol_to_Total_Lipids_in_Large_HDL_percentage",
+          "Cholesterol_to_Total_Lipids_in_Medium_HDL_percentage",
+          "Free_Cholesterol_to_Total_Lipids_in_Medium_HDL_percentage",
+          "Cholesterol_to_Total_Lipids_in_Small_HDL_percentage",
+          "Free_Cholesterol_to_Total_Lipids_in_Small_HDL_percentage"
+        ],
+        "HDL": [
+          "Total_Cholesterol_Minus_HDL_C",
+          "Remnant_Cholesterol_Non_HDL__Non_LDL__Cholesterol",
+          "HDL_Cholesterol",
+          "Triglycerides_in_HDL",
+          "Phospholipids_in_HDL",
+          "Cholesteryl_Esters_in_HDL",
+          "Free_Cholesterol_in_HDL",
+          "Total_Lipids_in_HDL",
+          "Concentration_of_HDL_Particles",
+          "Average_Diameter_for_HDL_Particles",
+          "Concentration_of_Very_Large_HDL_Particles",
+          "Total_Lipids_in_Very_Large_HDL",
+          "Phospholipids_in_Very_Large_HDL",
+          "Cholesterol_in_Very_Large_HDL",
+          "Cholesteryl_Esters_in_Very_Large_HDL",
+          "Free_Cholesterol_in_Very_Large_HDL",
+          "Triglycerides_in_Very_Large_HDL",
+          "Concentration_of_Large_HDL_Particles",
+          "Total_Lipids_in_Large_HDL",
+          "Phospholipids_in_Large_HDL",
+          "Cholesterol_in_Large_HDL",
+          "Cholesteryl_Esters_in_Large_HDL",
+          "Free_Cholesterol_in_Large_HDL",
+          "Triglycerides_in_Large_HDL",
+          "Concentration_of_Medium_HDL_Particles",
+          "Total_Lipids_in_Medium_HDL",
+          "Phospholipids_in_Medium_HDL",
+          "Cholesterol_in_Medium_HDL",
+          "Cholesteryl_Esters_in_Medium_HDL",
+          "Free_Cholesterol_in_Medium_HDL",
+          "Triglycerides_in_Medium_HDL",
+          "Concentration_of_Small_HDL_Particles",
+          "Total_Lipids_in_Small_HDL",
+          "Phospholipids_in_Small_HDL",
+          "Cholesterol_in_Small_HDL",
+          "Cholesteryl_Esters_in_Small_HDL",
+          "Free_Cholesterol_in_Small_HDL",
+          "Triglycerides_in_Small_HDL",
+          "Phospholipids_to_Total_Lipids_in_Very_Large_HDL_percentage",
+          "Cholesterol_to_Total_Lipids_in_Very_Large_HDL_percentage",
+          "Cholesteryl_Esters_to_Total_Lipids_in_Very_Large_HDL_percentage",
+          "Free_Cholesterol_to_Total_Lipids_in_Very_Large_HDL_percentage",
+          "Triglycerides_to_Total_Lipids_in_Very_Large_HDL_percentage",
+          "Phospholipids_to_Total_Lipids_in_Large_HDL_percentage",
+          "Cholesterol_to_Total_Lipids_in_Large_HDL_percentage",
+          "Cholesteryl_Esters_to_Total_Lipids_in_Large_HDL_percentage",
+          "Free_Cholesterol_to_Total_Lipids_in_Large_HDL_percentage",
+          "Triglycerides_to_Total_Lipids_in_Large_HDL_percentage",
+          "Phospholipids_to_Total_Lipids_in_Medium_HDL_percentage",
+          "Cholesterol_to_Total_Lipids_in_Medium_HDL_percentage",
+          "Cholesteryl_Esters_to_Total_Lipids_in_Medium_HDL_percentage",
+          "Free_Cholesterol_to_Total_Lipids_in_Medium_HDL_percentage",
+          "Triglycerides_to_Total_Lipids_in_Medium_HDL_percentage",
+          "Phospholipids_to_Total_Lipids_in_Small_HDL_percentage",
+          "Cholesterol_to_Total_Lipids_in_Small_HDL_percentage",
+          "Cholesteryl_Esters_to_Total_Lipids_in_Small_HDL_percentage",
+          "Free_Cholesterol_to_Total_Lipids_in_Small_HDL_percentage",
+          "Triglycerides_to_Total_Lipids_in_Small_HDL_percentage"
+        ],
+        "LDL": [
+          "Remnant_Cholesterol_Non_HDL__Non_LDL__Cholesterol",
+          "VLDL_Cholesterol",
+          "Clinical_LDL_Cholesterol",
+          "LDL_Cholesterol",
+          "Triglycerides_in_VLDL",
+          "Triglycerides_in_LDL",
+          "Phospholipids_in_VLDL",
+          "Phospholipids_in_LDL",
+          "Cholesteryl_Esters_in_VLDL",
+          "Cholesteryl_Esters_in_LDL",
+          "Free_Cholesterol_in_VLDL",
+          "Free_Cholesterol_in_LDL",
+          "Total_Lipids_in_VLDL",
+          "Total_Lipids_in_LDL",
+          "Concentration_of_VLDL_Particles",
+          "Concentration_of_LDL_Particles",
+          "Average_Diameter_for_VLDL_Particles",
+          "Average_Diameter_for_LDL_Particles",
+          "Concentration_of_Chylomicrons_and_Extremely_Large_VLDL_Particles",
+          "Total_Lipids_in_Chylomicrons_and_Extremely_Large_VLDL",
+          "Phospholipids_in_Chylomicrons_and_Extremely_Large_VLDL",
+          "Cholesterol_in_Chylomicrons_and_Extremely_Large_VLDL",
+          "Cholesteryl_Esters_in_Chylomicrons_and_Extremely_Large_VLDL",
+          "Free_Cholesterol_in_Chylomicrons_and_Extremely_Large_VLDL",
+          "Triglycerides_in_Chylomicrons_and_Extremely_Large_VLDL",
+          "Concentration_of_Very_Large_VLDL_Particles",
+          "Total_Lipids_in_Very_Large_VLDL",
+          "Phospholipids_in_Very_Large_VLDL",
+          "Cholesterol_in_Very_Large_VLDL",
+          "Cholesteryl_Esters_in_Very_Large_VLDL",
+          "Free_Cholesterol_in_Very_Large_VLDL",
+          "Triglycerides_in_Very_Large_VLDL",
+          "Concentration_of_Large_VLDL_Particles",
+          "Total_Lipids_in_Large_VLDL",
+          "Phospholipids_in_Large_VLDL",
+          "Cholesterol_in_Large_VLDL",
+          "Cholesteryl_Esters_in_Large_VLDL",
+          "Free_Cholesterol_in_Large_VLDL",
+          "Triglycerides_in_Large_VLDL",
+          "Concentration_of_Medium_VLDL_Particles",
+          "Total_Lipids_in_Medium_VLDL",
+          "Phospholipids_in_Medium_VLDL",
+          "Cholesterol_in_Medium_VLDL",
+          "Cholesteryl_Esters_in_Medium_VLDL",
+          "Free_Cholesterol_in_Medium_VLDL",
+          "Triglycerides_in_Medium_VLDL",
+          "Concentration_of_Small_VLDL_Particles",
+          "Total_Lipids_in_Small_VLDL",
+          "Phospholipids_in_Small_VLDL",
+          "Cholesterol_in_Small_VLDL",
+          "Cholesteryl_Esters_in_Small_VLDL",
+          "Free_Cholesterol_in_Small_VLDL",
+          "Triglycerides_in_Small_VLDL",
+          "Concentration_of_Very_Small_VLDL_Particles",
+          "Total_Lipids_in_Very_Small_VLDL",
+          "Phospholipids_in_Very_Small_VLDL",
+          "Cholesterol_in_Very_Small_VLDL",
+          "Cholesteryl_Esters_in_Very_Small_VLDL",
+          "Free_Cholesterol_in_Very_Small_VLDL",
+          "Triglycerides_in_Very_Small_VLDL",
+          "Concentration_of_Large_LDL_Particles",
+          "Total_Lipids_in_Large_LDL",
+          "Phospholipids_in_Large_LDL",
+          "Cholesterol_in_Large_LDL",
+          "Cholesteryl_Esters_in_Large_LDL",
+          "Free_Cholesterol_in_Large_LDL",
+          "Triglycerides_in_Large_LDL",
+          "Concentration_of_Medium_LDL_Particles",
+          "Total_Lipids_in_Medium_LDL",
+          "Phospholipids_in_Medium_LDL",
+          "Cholesterol_in_Medium_LDL",
+          "Cholesteryl_Esters_in_Medium_LDL",
+          "Free_Cholesterol_in_Medium_LDL",
+          "Triglycerides_in_Medium_LDL",
+          "Concentration_of_Small_LDL_Particles",
+          "Total_Lipids_in_Small_LDL",
+          "Phospholipids_in_Small_LDL",
+          "Cholesterol_in_Small_LDL",
+          "Cholesteryl_Esters_in_Small_LDL",
+          "Free_Cholesterol_in_Small_LDL",
+          "Triglycerides_in_Small_LDL",
+          "Phospholipids_to_Total_Lipids_in_Chylomicrons_and_Extremely_Large_VLDL_percentage",
+          "Cholesterol_to_Total_Lipids_in_Chylomicrons_and_Extremely_Large_VLDL_percentage",
+          "Cholesteryl_Esters_to_Total_Lipids_in_Chylomicrons_and_Extremely_Large_VLDL_percentage",
+          "Free_Cholesterol_to_Total_Lipids_in_Chylomicrons_and_Extremely_Large_VLDL_percentage",
+          "Triglycerides_to_Total_Lipids_in_Chylomicrons_and_Extremely_Large_VLDL_percentage",
+          "Phospholipids_to_Total_Lipids_in_Very_Large_VLDL_percentage",
+          "Cholesterol_to_Total_Lipids_in_Very_Large_VLDL_percentage",
+          "Cholesteryl_Esters_to_Total_Lipids_in_Very_Large_VLDL_percentage",
+          "Free_Cholesterol_to_Total_Lipids_in_Very_Large_VLDL_percentage",
+          "Triglycerides_to_Total_Lipids_in_Very_Large_VLDL_percentage",
+          "Phospholipids_to_Total_Lipids_in_Large_VLDL_percentage",
+          "Cholesterol_to_Total_Lipids_in_Large_VLDL_percentage",
+          "Cholesteryl_Esters_to_Total_Lipids_in_Large_VLDL_percentage",
+          "Free_Cholesterol_to_Total_Lipids_in_Large_VLDL_percentage",
+          "Triglycerides_to_Total_Lipids_in_Large_VLDL_percentage",
+          "Phospholipids_to_Total_Lipids_in_Medium_VLDL_percentage",
+          "Cholesterol_to_Total_Lipids_in_Medium_VLDL_percentage",
+          "Cholesteryl_Esters_to_Total_Lipids_in_Medium_VLDL_percentage",
+          "Free_Cholesterol_to_Total_Lipids_in_Medium_VLDL_percentage",
+          "Triglycerides_to_Total_Lipids_in_Medium_VLDL_percentage",
+          "Phospholipids_to_Total_Lipids_in_Small_VLDL_percentage",
+          "Cholesterol_to_Total_Lipids_in_Small_VLDL_percentage",
+          "Cholesteryl_Esters_to_Total_Lipids_in_Small_VLDL_percentage",
+          "Free_Cholesterol_to_Total_Lipids_in_Small_VLDL_percentage",
+          "Triglycerides_to_Total_Lipids_in_Small_VLDL_percentage",
+          "Phospholipids_to_Total_Lipids_in_Very_Small_VLDL_percentage",
+          "Cholesterol_to_Total_Lipids_in_Very_Small_VLDL_percentage",
+          "Cholesteryl_Esters_to_Total_Lipids_in_Very_Small_VLDL_percentage",
+          "Free_Cholesterol_to_Total_Lipids_in_Very_Small_VLDL_percentage",
+          "Triglycerides_to_Total_Lipids_in_Very_Small_VLDL_percentage",
+          "Phospholipids_to_Total_Lipids_in_Large_LDL_percentage",
+          "Cholesterol_to_Total_Lipids_in_Large_LDL_percentage",
+          "Cholesteryl_Esters_to_Total_Lipids_in_Large_LDL_percentage",
+          "Free_Cholesterol_to_Total_Lipids_in_Large_LDL_percentage",
+          "Triglycerides_to_Total_Lipids_in_Large_LDL_percentage",
+          "Phospholipids_to_Total_Lipids_in_Medium_LDL_percentage",
+          "Cholesterol_to_Total_Lipids_in_Medium_LDL_percentage",
+          "Cholesteryl_Esters_to_Total_Lipids_in_Medium_LDL_percentage",
+          "Free_Cholesterol_to_Total_Lipids_in_Medium_LDL_percentage",
+          "Triglycerides_to_Total_Lipids_in_Medium_LDL_percentage",
+          "Phospholipids_to_Total_Lipids_in_Small_LDL_percentage",
+          "Cholesterol_to_Total_Lipids_in_Small_LDL_percentage",
+          "Cholesteryl_Esters_to_Total_Lipids_in_Small_LDL_percentage",
+          "Free_Cholesterol_to_Total_Lipids_in_Small_LDL_percentage",
+          "Triglycerides_to_Total_Lipids_in_Small_LDL_percentage"
+        ],
+        "Triglycerides": [
+          "Total_Triglycerides",
+          "Triglycerides_in_VLDL",
+          "Triglycerides_in_LDL",
+          "Triglycerides_in_HDL",
+          "Triglycerides_to_Phosphoglycerides_ratio",
+          "Triglycerides_in_Chylomicrons_and_Extremely_Large_VLDL",
+          "Triglycerides_in_Very_Large_VLDL",
+          "Triglycerides_in_Large_VLDL",
+          "Triglycerides_in_Medium_VLDL",
+          "Triglycerides_in_Small_VLDL",
+          "Triglycerides_in_Very_Small_VLDL",
+          "Triglycerides_in_IDL",
+          "Triglycerides_in_Large_LDL",
+          "Triglycerides_in_Medium_LDL",
+          "Triglycerides_in_Small_LDL",
+          "Triglycerides_in_Very_Large_HDL",
+          "Triglycerides_in_Large_HDL",
+          "Triglycerides_in_Medium_HDL",
+          "Triglycerides_in_Small_HDL",
+          "Triglycerides_to_Total_Lipids_in_Chylomicrons_and_Extremely_Large_VLDL_percentage",
+          "Triglycerides_to_Total_Lipids_in_Very_Large_VLDL_percentage",
+          "Triglycerides_to_Total_Lipids_in_Large_VLDL_percentage",
+          "Triglycerides_to_Total_Lipids_in_Medium_VLDL_percentage",
+          "Triglycerides_to_Total_Lipids_in_Small_VLDL_percentage",
+          "Triglycerides_to_Total_Lipids_in_Very_Small_VLDL_percentage",
+          "Triglycerides_to_Total_Lipids_in_IDL_percentage",
+          "Triglycerides_to_Total_Lipids_in_Large_LDL_percentage",
+          "Triglycerides_to_Total_Lipids_in_Medium_LDL_percentage",
+          "Triglycerides_to_Total_Lipids_in_Small_LDL_percentage",
+          "Triglycerides_to_Total_Lipids_in_Very_Large_HDL_percentage",
+          "Triglycerides_to_Total_Lipids_in_Large_HDL_percentage",
+          "Triglycerides_to_Total_Lipids_in_Medium_HDL_percentage",
+          "Triglycerides_to_Total_Lipids_in_Small_HDL_percentage"
+        ],
+        "Creatinine": [
+          "Creatinine"
+        ]
+      },
+      "blood_participants": 604514,
+      "nmr_participants": 1004632
+    },
+    "retinal_imaging": {
+      "retinal_biomarkers": {
+        "Macular thickness": [
+          "Macular_thickness_at_the_central_subfield_left.0",
+          "Macular_thickness_at_the_central_subfield_right.0",
+          "Macular_thickness_at_the_inner_inferior_subfield_left.0",
+          "Macular_thickness_at_the_inner_inferior_subfield_right.0",
+          "Macular_thickness_at_the_inner_nasal_subfield_left.0",
+          "Macular_thickness_at_the_inner_nasal_subfield_right.0",
+          "Macular_thickness_at_the_inner_superior_subfield_left.0",
+          "Macular_thickness_at_the_inner_superior_subfield_right.0",
+          "Macular_thickness_at_the_inner_temporal_subfield_left.0",
+          "Macular_thickness_at_the_inner_temporal_subfield_right.0",
+          "Macular_thickness_at_the_outer_inferior_subfield_left.0",
+          "Macular_thickness_at_the_outer_inferior_subfield_right.0",
+          "Macular_thickness_at_the_outer_nasal_subfield_left.0",
+          "Macular_thickness_at_the_outer_nasal_subfield_right.0",
+          "Macular_thickness_at_the_outer_superior_subfield_left.0",
+          "Macular_thickness_at_the_outer_superior_subfield_right.0",
+          "Macular_thickness_at_the_outer_temporal_subfield_left.0",
+          "Macular_thickness_at_the_outer_temporal_subfield_right.0",
+          "Overall_macular_thickness_left",
+          "Overall_macular_thickness_right"
+        ]
+      },
+      "oct_participants": 84864
+    },
+    "body_composition": {
+      "body_biomarkers": {
+        "BMI": [
+          "BMI",
+          "BMI"
+        ],
+        "Waist circumference": [
+          "Waist_circumference",
+          "Waist_circumference"
+        ],
+        "Hip circumference": [
+          "Hip_circumference",
+          "Hip_circumference"
+        ],
+        "Hand grip strength": [
+          "Hand_grip_strength_left",
+          "Hand_grip_strength_right"
+        ]
+      },
+      "body_participants": 603556,
+      "bodysize_participants": 606361,
+      "frailty_participants": 2109463
+    },
+    "genetic_data": {
+      "prs_count": 93,
+      "genetic_pc_count": 41,
+      "prs_participants": 502182,
+      "genetic_pc_participants": 502316
+    },
+    "demographics": {
+      "demographic_variables": {
+        "sex": [
+          "Sex.0"
+        ],
+        "birth": [
+          "Birth_year.0",
+          "Birth_month.0"
+        ],
+        "age": [
+          "age_at_mortality",
+          "Education_complete_age",
+          "Age_HT",
+          "Age_DM",
+          "Age_smoking",
+          "Age_glaucoma",
+          "Age_cataract",
+          "age_dm_eye",
+          "age_md_eye",
+          "age_serious_eye",
+          "Age",
+          "Death_age",
+          "OCT_image_slices_left",
+          "OCT_image_slices_right"
+        ],
+        "ethnic": [
+          "Ethnicity"
+        ],
+        "income": [
+          "Household_income"
+        ],
+        "education": [
+          "Education_complete_age",
+          "Education_qualifications"
+        ],
+        "townsend": [
+          "Townsend_deprivation_index_at_recruitment.0"
+        ]
+      },
+      "main_participants": 606361
+    },
+    "participant_overlap": {
+      "total_participants": 606361,
+      "blood_coverage": 604514,
+      "genetic_coverage": 502182,
+      "imaging_coverage": {
+        "oct": 84864,
+        "brain": 509304,
+        "dxa": 54097
+      }
+    }
+  },
+  "feasibility_assessment": {
+    "coverage_percentages": {
+      "blood_biomarkers": 99.695395976984,
+      "metabolomics": 165.68215963757564,
+      "retinal_imaging": 13.995623069425639,
+      "genetic_data": 82.81898077218027,
+      "brain_imaging": 83.99352860754567,
+      "dxa_imaging": 8.921583017377436
+    },
+    "approach_feasibility": {
+      "blood_biomarker_only": "HIGH",
+      "multi_modal": "MEDIUM",
+      "metabolomics": "HIGH",
+      "retinal_imaging": "MEDIUM"
+    },
+    "sample_size_estimates": {
+      "blood_biomarker_only": 604514,
+      "multi_modal": 84864
+    },
+    "recommendations": [
+      "Blood biomarker approach highly feasible with >80% coverage",
+      "Multi-modal approach feasible with 14.0% coverage (84,864 participants)",
+      "NMR metabolomics provides comprehensive metabolic profiling",
+      "Retinal imaging viable for 14.0% of cohort"
+    ]
+  }
+}

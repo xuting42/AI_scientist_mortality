@@ -1,0 +1,125 @@
+{
+  "demographic_analysis": {
+    "age_distribution": {
+      "total_participants": 605655,
+      "mean_age": 57.91984875878182,
+      "median_age": 59.0,
+      "std_age": 8.62142650613501,
+      "min_age": 37.0,
+      "max_age": 86.0,
+      "age_distribution": {
+        "18-30": 0,
+        "30-40": 7,
+        "40-50": 120599,
+        "50-60": 192159,
+        "60-70": 259997,
+        "70-80": 30923,
+        "80+": 1970
+      }
+    },
+    "sex_distribution": {
+      "total_with_sex_data": 606361,
+      "male_count": 279409,
+      "female_count": 326952,
+      "male_percentage": 46.07964562364664,
+      "female_percentage": 53.920354376353366
+    },
+    "ethnic_distribution": {
+      "total_with_ethnic_data": 547801,
+      "unique_ethnic_categories": 22,
+      "ethnic_distribution": {
+        "British": 472066,
+        "Any other white background": 17019,
+        "White": 14392,
+        "Irish": 13989,
+        "Indian": 6107,
+        "Other ethnic group": 4764,
+        "Caribbean": 4606,
+        "African": 3459,
+        "Pakistani": 1903,
+        "Any other Asian background": 1853,
+        "Prefer not to answer": 1778,
+        "Chinese": 1690,
+        "Any other mixed background": 1079,
+        "White and Asian": 863,
+        "White and Black Caribbean": 649,
+        "White and Black African": 449,
+        "Bangladeshi": 240,
+        "Asian or Asian British": 228,
+        "Do not know": 226,
+        "Black or Black British": 164,
+        "Mixed": 151,
+        "Any other Black background": 126
+      },
+      "ethnic_percentages": {
+        "British": 86.17,
+        "Any other white background": 3.11,
+        "White": 2.63,
+        "Irish": 2.55,
+        "Indian": 1.11,
+        "Other ethnic group": 0.87,
+        "Caribbean": 0.84,
+        "African": 0.63,
+        "Pakistani": 0.35,
+        "Any other Asian background": 0.34,
+        "Prefer not to answer": 0.32,
+        "Chinese": 0.31,
+        "Any other mixed background": 0.2,
+        "White and Asian": 0.16,
+        "White and Black Caribbean": 0.12,
+        "White and Black African": 0.08,
+        "Bangladeshi": 0.04,
+        "Asian or Asian British": 0.04,
+        "Do not know": 0.04,
+        "Black or Black British": 0.03,
+        "Mixed": 0.03,
+        "Any other Black background": 0.02
+      }
+    },
+    "socioeconomic_distribution": {
+      "total_with_townsend_data": 503921,
+      "mean_townsend": -1.2997649433145277,
+      "median_townsend": -2.14,
+      "std_townsend": 3.092830478192922,
+      "min_townsend": -6.26,
+      "max_townsend": 11.0,
+      "deprivation_quintiles": {
+        "least_deprived (Q1)": 101970,
+        "Q2": 100013,
+        "Q3": 100817,
+        "Q4": 100523,
+        "most_deprived (Q5)": 100598
+      }
+    }
+  },
+  "data_modality_overlap": {
+    "main_coverage": 502316,
+    "blood_coverage": 502316,
+    "nmr_coverage": 502316,
+    "oct_coverage": 84402,
+    "brain_coverage": 502316,
+    "prs_coverage": 502182,
+    "dxa_coverage": 50320,
+    "all_modalities_intersection": 14176,
+    "blood_retinal_genetic": 84381,
+    "blood_genetic": 502182,
+    "retinal_genetic": 84381,
+    "all_imaging": 14176
+  },
+  "methodological_considerations": {
+    "strengths": [
+      "Balanced sex distribution supports sex-specific analyses",
+      "Ethnic diversity with 22 categories supports cross-population validation",
+      "Multi-modal analysis feasible with 16.8% coverage"
+    ],
+    "limitations": [],
+    "recommendations": [
+      "Account for age distribution biases in age prediction models",
+      "Consider sex-stratified analyses to identify sex-specific aging patterns",
+      "Evaluate model performance across different ethnic groups",
+      "Use appropriate sampling strategies for multi-modal analyses to avoid selection bias",
+      "Consider longitudinal analysis where multiple time points are available"
+    ],
+    "bias_assessment": {}
+  }
+}

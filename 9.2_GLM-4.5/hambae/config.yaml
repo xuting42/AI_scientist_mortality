@@ -1,0 +1,250 @@
+# Default HAMBAE Configuration
+
+# Global Settings
+project_name: "hambae"
+experiment_name: "default"
+output_dir: "outputs"
+environment: "development"
+debug: false
+verbose: true
+
+# Data Configuration
+data:
+  data_root: "data/ukbb"
+  batch_size: 128
+  num_workers: 4
+  pin_memory: true
+  persistent_workers: true
+  
+  # UKBB Field IDs
+  ukbb_fields:
+    blood_biomarkers: [30000, 30010, 30020, 30030, 30040, 30050, 30060, 30070, 30080, 30090, 30100, 30110, 30120]
+    metabolomics: [23400, 23401, 23402, 23403, 23404, 23405, 23406, 23407, 23408, 23409]
+    retinal: [22400, 22401, 22402]
+    genetic: [22000, 22001, 22002, 22003, 22004, 22005]
+  
+  # Preprocessing
+  normalization_method: "robust"
+  handle_missing: "median"
+  outlier_method: "iqr"
+  outlier_threshold: 3.0
+  
+  # Feature Engineering
+  create_ratios: true
+  create_interactions: true
+  temporal_features: true
+  
+  # Quality Control
+  min_data_quality: 0.7
+  max_missing_rate: 0.3
+  correct_batch_effects: true
+
+# Tier 1 Configuration
+tier1:
+  # Base Model
+  hidden_dim: 256
+  num_layers: 3
+  dropout_rate: 0.1
+  activation: "gelu"
+  use_batch_norm: true
+  use_layer_norm: true
+  
+  # Tier 1 Specific
+  blood_biomarker_count: 13
+  enable_epigenetic_proxy: true
+  epigenetic_hidden_dim: 128
+  epigenetic_layers: 2
+  enable_explainability: true
+  feature_importance_method: "shap"
+  multi_task: true
+  mortality_weight: 0.3
+  enforce_monotonicity: true
+  monotonicity_penalty: 0.1
+  
+  # Uncertainty
+  enable_uncertainty: true
+  mc_dropout: true
+  mc_samples: 50
+  heteroscedastic: true
+  
+  # Optimization
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  optimizer: "adamw"
+  scheduler: "cosine"
+  warmup_steps: 1000
+  
+  # Performance Targets
+  target_mae: 5.5
+  target_r2: 0.75
+
+# Tier 2 Configuration
+tier2:
+  # Base Model
+  hidden_dim: 256
+  num_layers: 3
+  dropout_rate: 0.1
+  activation: "gelu"
+  use_batch_norm: true
+  use_layer_norm: true
+  
+  # Tier 2 Specific
+  metabolomic_count: 400
+  gnn_hidden_dim: 256
+  gnn_layers: 3
+  gnn_attention_heads: 8
+  enable_pathway_analysis: true
+  pathway_database: "kegg"
+  pathway_hidden_dim: 128
+  cross_modal_attention: true
+  attention_dim: 256
+  attention_heads: 8
+  use_tier1_features: true
+  tier1_feature_weight: 0.5
+  
+  # Uncertainty
+  enable_uncertainty: true
+  mc_dropout: true
+  mc_samples: 50
+  heteroscedastic: true
+  
+  # Optimization
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  optimizer: "adamw"
+  scheduler: "cosine"
+  warmup_steps: 1000
+  
+  # Performance Targets
+  target_mae: 4.5
+  target_r2: 0.82
+
+# Tier 3 Configuration
+tier3:
+  # Base Model
+  hidden_dim: 256
+  num_layers: 3
+  dropout_rate: 0.1
+  activation: "gelu"
+  use_batch_norm: true
+  use_layer_norm: true
+  
+  # Tier 3 Specific
+  retinal_feature_dim: 768
+  genetic_feature_dim: 1000
+  transformer_layers: 6
+  transformer_heads: 12
+  transformer_dim: 768
+  transformer_dropout: 0.1
+  retinal_model: "retfound"
+  retinal_pretrained: true
+  modal_attention: "cross"
+  modal_fusion: "attention"
+  enable_longitudinal: true
+  longitudinal_window: 5
+  aging_velocity: true
+  organ_specific: true
+  organs: ["brain", "heart", "liver", "kidney", "lung"]
+  
+  # Uncertainty
+  enable_uncertainty: true
+  mc_dropout: true
+  mc_samples: 50
+  heteroscedastic: true
+  
+  # Optimization
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  optimizer: "adamw"
+  scheduler: "cosine"
+  warmup_steps: 1000
+  
+  # Performance Targets
+  target_mae: 3.5
+  target_r2: 0.88
+
+# Uncertainty Configuration
+uncertainty:
+  enable_bayesian: true
+  prior_scale: 1.0
+  posterior_samples: 100
+  heteroscedastic_loss: true
+  uncertainty_weight: 0.1
+  enable_calibration: true
+  calibration_method: "temperature"
+  temperature_init: 1.0
+  data_quality_weight: 0.05
+  missing_data_penalty: 0.1
+  ensemble_size: 5
+  ensemble_method: "deep"
+
+# Training Configuration
+training:
+  # Hardware
+  device: "auto"
+  num_gpus: 1
+  distributed: false
+  backend: "nccl"
+  
+  # Checkpointing
+  save_dir: "checkpoints"
+  save_freq: 10
+  save_best_only: true
+  load_checkpoint: null
+  
+  # Logging
+  log_dir: "logs"
+  log_freq: 10
+  enable_wandb: false
+  wandb_project: "hambae"
+  
+  # Validation
+  val_freq: 5
+  val_split: 0.2
+  test_split: 0.1
+  stratified_split: true
+  
+  # Cross-validation
+  enable_cv: false
+  cv_folds: 5
+  cv_method: "stratified"
+  
+  # Reproducibility
+  seed: 42
+  deterministic: true
+  benchmark: false
+  
+  # Training Settings
+  max_epochs: 100
+  gradient_clip_norm: 1.0
+  mixed_precision: true
+  gradient_accumulation_steps: 1
+  l1_lambda: 0.0
+  l2_lambda: 0.0001
+  early_stopping_patience: 20
+
+# Deployment Configuration
+deployment:
+  # Model Serving
+  serve_port: 8000
+  serve_host: "0.0.0.0"
+  max_batch_size: 32
+  timeout: 30
+  
+  # API Settings
+  api_version: "v1"
+  enable_docs: true
+  enable_cors: true
+  
+  # Monitoring
+  enable_monitoring: true
+  metrics_port: 8001
+  health_check_interval: 30
+  
+  # Versioning
+  model_version: "latest"
+  enable_versioning: true
+  
+  # Scaling
+  max_workers: 4
+  worker_timeout: 120

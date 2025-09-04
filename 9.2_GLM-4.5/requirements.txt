@@ -1,0 +1,223 @@
+# HAMBAE Requirements
+
+# Core Dependencies
+torch>=1.9.0
+torchvision>=0.10.0
+torchaudio>=0.9.0
+numpy>=1.21.0
+pandas>=1.3.0
+scikit-learn>=1.0.0
+scipy>=1.7.0
+
+# Data Processing
+pyarrow>=6.0.0
+h5py>=3.1.0
+joblib>=1.0.0
+
+# Deep Learning
+transformers>=4.12.0
+timm>=0.6.0
+
+# Uncertainty Quantification
+pyro-ppl>=1.7.0
+
+# Optimization
+optuna>=2.10.0
+ray[tune]>=1.9.0
+
+# Visualization
+matplotlib>=3.4.0
+seaborn>=0.11.0
+plotly>=5.0.0
+tensorboard>=2.7.0
+
+# Utilities
+tqdm>=4.62.0
+click>=8.0.0
+pyyaml>=5.4.0
+jsonschema>=4.0.0
+python-dotenv>=0.19.0
+
+# Logging and Monitoring
+wandb>=0.12.0
+mlflow>=1.20.0
+prometheus-client>=0.11.0
+
+# Testing
+pytest>=6.2.0
+pytest-cov>=2.12.0
+pytest-mock>=3.6.0
+
+# Code Quality
+black>=21.0.0
+flake8>=3.9.0
+isort>=5.9.0
+mypy>=0.910
+
+# Documentation
+sphinx>=4.0.0
+sphinx-rtd-theme>=0.5.0
+
+# Deployment
+fastapi>=0.68.0
+uvicorn>=0.15.0
+gunicorn>=20.1.0
+docker>=5.0.0
+
+# Development
+jupyter>=1.0.0
+ipython>=7.25.0
+notebook>=6.4.0
+
+# Optional Dependencies for Enhanced Features
+# Retinal Imaging
+opencv-python>=4.5.0
+Pillow>=8.3.0
+imageio>=2.9.0
+
+# Genetic Data Processing
+pysam>=0.16.0
+biopython>=1.79
+
+# Metabolomics Analysis
+matchms>=0.14.0
+pyteomics>=4.4.0
+
+# Advanced Statistics
+statsmodels>=0.12.0
+lifelines>=0.25.0
+
+# Graph Neural Networks
+torch-geometric>=2.0.0
+dgl>=0.7.0
+
+# Natural Language Processing
+spacy>=3.2.0
+nltk>=3.6.0
+
+# Distributed Computing
+horovod>=0.24.0
+deepspeed>=0.5.0
+
+# Database
+sqlalchemy>=1.4.0
+psycopg2-binary>=2.9.0
+
+# Cloud Storage
+boto3>=1.20.0
+google-cloud-storage>=1.42.0
+azure-storage-blob>=12.8.0
+
+# Configuration Management
+hydra-core>=1.1.0
+omegaconf>=2.1.0
+
+# API Documentation
+fastapi[all]>=0.68.0
+
+# Monitoring and Alerting
+sentry-sdk>=1.3.0
+elastic-apm>=6.4.0
+
+# Security
+cryptography>=3.4.0
+pyjwt>=2.1.0
+
+# Performance Profiling
+memory-profiler>=0.58.0
+line-profiler>=3.3.0
+
+# Data Validation
+great-expectations>=0.15.0
+pandera>=0.8.0
+
+# Experiment Tracking
+comet-ml>=3.29.0
+weights-and-biases>=0.12.0
+
+# Model Versioning
+mlflow>=1.20.0
+dvc>=2.8.0
+
+# Containerization
+docker>=5.0.0
+kubernetes>=18.0.0
+
+# Build Tools
+setuptools>=57.0.0
+wheel>=0.36.0
+build>=0.6.0
+
+# Development Tools
+pre-commit>=2.15.0
+tox>=3.24.0
+nox>=2021.6.6
+
+# Documentation Tools
+mkdocs>=1.2.0
+mkdocs-material>=7.3.0
+mkdocstrings[python]>=0.16.0
+
+# Testing Tools
+pytest-benchmark>=3.4.0
+pytest-xdist>=2.4.0
+pytest-timeout>=2.1.0
+
+# Code Analysis
+radon>=5.1.0
+vulture>=2.3.0
+bandit>=1.7.0
+
+# Type Checking
+pyright>=1.1.0
+typeguard>=2.12.0
+
+# Performance Optimization
+numba>=0.54.0
+cupy-cuda11x>=9.4.0
+
+# Parallel Processing
+dask>=2021.8.0
+joblib>=1.0.0
+
+# Data Formats
+pyarrow>=6.0.0
+parquet>=1.1.0
+hdf5>=3.1.0
+
+# Web Frameworks
+streamlit>=1.0.0
+dash>=2.0.0
+
+# Database Tools
+alembic>=1.7.0
+redis>=3.5.0
+
+# Monitoring
+grafana-api>=1.0.3
+influxdb-client>=1.24.0
+
+# Security Tools
+safety>=1.10.0
+bandit>=1.7.0
+
+# Utilities
+python-dateutil>=2.8.0
+pytz>=2021.1
+requests>=2.26.0
+urllib3>=1.26.0
+
+# Development Dependencies (Optional)
+jupyterlab>=3.1.0
+ipywidgets>=7.6.0
+nbclient>=0.5.0
+nbconvert>=6.1.0
+
+# Production Dependencies (Optional)
+gunicorn>=20.1.0
+nginx>=1.20.0
+supervisor>=4.2.0
+
+# GPU-specific Dependencies (Optional)
+nvidia-ml-py3>=7.352.0
+cupy-cuda11x>=9.4.0
